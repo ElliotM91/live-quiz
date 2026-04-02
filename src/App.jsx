@@ -1202,10 +1202,7 @@ function App() {
         <>
           <div className="topbar">
             <div>
-              <h1>Live Quiz Control Room</h1>
-              <p className="intro">
-                A phase-based live quiz flow for host, player and big-screen display.
-              </p>
+              <h1 style={{ color: '#000', fontWeight: 800 }}>PRIZE FIGHT</h1>
             </div>
           </div>
 
@@ -1570,13 +1567,11 @@ function App() {
           {joinedPlayer && playerShowLiveQuestion && (
             <div
               style={{
-                minHeight: '100vh',
+                minHeight: 'calc(100vh - 120px)',
                 maxWidth: '760px',
                 margin: '0 auto',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '16px',
-                paddingBottom: '24px',
               }}
             >
               <div
@@ -1585,25 +1580,50 @@ function App() {
                   flex: 1,
                   display: 'flex',
                   flexDirection: 'column',
+                  paddingTop: '18px',
+                  paddingBottom: '18px',
                 }}
               >
-                <div className="question-card-top" style={{ marginBottom: '16px' }}>
+                <div className="question-card-top" style={{ marginBottom: '10px' }}>
                   <span className="question-round">Question {loadedPlayerQuestion.question_number}</span>
                   <span className={`question-status question-status-${loadedPlayerQuestion.status}`}>
                     live
                   </span>
                 </div>
 
-                <h2 className="player-question-title" style={{ fontSize: '30px', marginBottom: '18px' }}>
+                <h2
+                  className="player-question-title"
+                  style={{
+                    fontSize: '24px',
+                    marginBottom: '10px',
+                    color: '#000',
+                    textAlign: 'center',
+                  }}
+                >
                   {loadedPlayerQuestion.prompt}
                 </h2>
 
-                <div className="selection-counter" style={{ fontSize: '16px', marginBottom: '18px' }}>
+                <div
+                  className="selection-counter"
+                  style={{
+                    fontSize: '15px',
+                    marginBottom: '10px',
+                    textAlign: 'center',
+                  }}
+                >
                   Select exactly 5 answers — <strong>{selectedOptionIds.length} / 5 selected</strong>
                 </div>
 
-                <div style={{ flex: 1 }}>
-                  <div className="answers-grid">
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div
+                    className="answers-grid"
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '8px',
+                      marginBottom: '12px',
+                    }}
+                  >
                     {loadedPlayerOptions.map((option) => {
                       const isSelected = selectedOptionIds.includes(option.id)
 
@@ -1621,18 +1641,21 @@ function App() {
                             'answer-tile',
                             isSelected ? 'answer-tile-selected' : '',
                           ].join(' ').trim()}
-                          style={
-                            isSelected
+                          style={{
+                            padding: '10px 12px',
+                            minHeight: '52px',
+                            fontSize: '14px',
+                            ...(isSelected
                               ? {
-                                  borderColor: 'var(--pink)',
+                                  borderColor: 'rgba(255, 62, 168, 0.95)',
                                   background:
                                     'linear-gradient(135deg, rgba(255, 62, 168, 0.18), rgba(66, 198, 255, 0.18)), #f8fafc',
                                   boxShadow:
-                                    '0 0 0 3px rgba(255,62,168,0.25), 0 0 18px rgba(255,62,168,0.35), 0 0 22px rgba(66,198,255,0.28)',
+                                    '0 0 0 4px rgba(255, 62, 168, 0.2), 0 0 16px rgba(255, 62, 168, 0.28), 0 0 18px rgba(66, 198, 255, 0.22)',
                                   transform: 'scale(1.02)',
                                 }
-                              : undefined
-                          }
+                              : {}),
+                          }}
                         >
                           <span className="answer-number">{option.option_number}</span>
                           <span className="answer-text">{option.text}</span>
@@ -1640,9 +1663,7 @@ function App() {
                       )
                     })}
                   </div>
-                </div>
 
-                <div style={{ marginTop: 'auto', paddingTop: '10px' }}>
                   <button
                     onClick={submitAnswers}
                     disabled={
@@ -1652,18 +1673,15 @@ function App() {
                     }
                     className="primary-button full-width"
                     style={{
-                      paddingTop: '16px',
-                      paddingBottom: '16px',
+                      paddingTop: '14px',
+                      paddingBottom: '14px',
                       fontSize: '18px',
                       fontWeight: 700,
+                      marginTop: 'auto',
                     }}
                   >
                     {isSubmitting ? 'Submitting...' : 'Submit Answers'}
                   </button>
-
-                  <div className="status-box">
-                    <p><strong>Status:</strong> {submissionMessage || playerQuestionMessage || 'Waiting'}</p>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1672,13 +1690,12 @@ function App() {
           {joinedPlayer && playerWaitingAfterSubmit && (
             <div
               style={{
-                minHeight: '100vh',
+                minHeight: 'calc(100vh - 120px)',
                 maxWidth: '760px',
                 margin: '0 auto',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                paddingBottom: '24px',
               }}
             >
               <div
@@ -1695,24 +1712,19 @@ function App() {
                     fontSize: '52px',
                     lineHeight: 1,
                     marginBottom: '18px',
+                    color: '#16a34a',
                   }}
                 >
                   ✓
                 </div>
 
-                <h2 style={{ fontSize: '34px', marginBottom: '12px' }}>
+                <h2 style={{ fontSize: '34px', marginBottom: '12px', color: '#000' }}>
                   Answers Submitted
                 </h2>
 
-                <p style={{ fontSize: '18px', color: '#526274', marginBottom: '0' }}>
+                <p style={{ fontSize: '18px', color: '#526274', marginBottom: 0 }}>
                   Waiting for the host to reveal the answers...
                 </p>
-
-                <div className="status-box" style={{ marginTop: '24px', textAlign: 'left' }}>
-                  <p><strong>Question:</strong> {loadedPlayerQuestion?.prompt || 'Waiting'}</p>
-                  <p><strong>Selection:</strong> {selectedOptionIds.length} / 5 locked in</p>
-                  <p><strong>Status:</strong> {submissionMessage || 'Answers submitted.'}</p>
-                </div>
               </div>
             </div>
           )}
@@ -1720,7 +1732,7 @@ function App() {
           {joinedPlayer && !playerShowLiveQuestion && !playerWaitingAfterSubmit && (
             <div className="player-layout">
               <div className="panel player-panel">
-                <h2>Player</h2>
+                <h2 style={{ color: '#000' }}>Player</h2>
 
                 <div className="result-box">
                   <p><strong>Name:</strong> {joinedPlayer.name}</p>
@@ -1750,7 +1762,9 @@ function App() {
                       </span>
                     </div>
 
-                    <h3 className="player-question-title">{loadedPlayerQuestion.prompt}</h3>
+                    <h3 className="player-question-title" style={{ color: '#000' }}>
+                      {loadedPlayerQuestion.prompt}
+                    </h3>
 
                     <div className="answers-grid">
                       {loadedPlayerOptions.map((option) => {
