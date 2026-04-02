@@ -204,6 +204,11 @@ function App() {
   const canShowLeaderboard = !!createdGame
   const canGoNext = !!createdGame
 
+  const playerQuestionIsOpen = loadedPlayerQuestion?.status === 'open'
+  const playerQuestionIsRevealed = loadedPlayerQuestion?.status === 'revealed'
+  const playerWaitingAfterSubmit = !!submittedResult && !playerQuestionIsRevealed
+  const playerShowLiveQuestion = !!joinedPlayer && playerQuestionIsOpen && !submittedResult
+
   function updateOptionText(index, value) {
     const next = [...answerOptions]
     next[index].text = value
@@ -886,6 +891,8 @@ function App() {
     if (showMessage) {
       if (question.status === 'revealed') {
         setPlayerQuestionMessage('Answers have been revealed.')
+      } else if (existingSubmission) {
+        setPlayerQuestionMessage('Answers submitted.')
       } else if (question.status === 'closed') {
         setPlayerQuestionMessage('Question is closed.')
       } else {
@@ -1165,6 +1172,8 @@ function App() {
 
   useEffect(() => {
     if (viewMode !== 'player' || !joinedPlayer) return
+
+    loadQuestionForPlayer(false)
 
     const delay = loadedPlayerQuestion?.status === 'open' ? 1500 : 2500
 
@@ -1519,152 +1528,277 @@ function App() {
       )}
 
       {viewMode === 'player' && (
-        <div className="player-layout">
-          <div className="panel player-panel">
-            <h2>Join the Game</h2>
+        <>
+          {!joinedPlayer && (
+            <div className="player-layout">
+              <div className="panel player-panel">
+                <h2>Join the Game</h2>
 
-            <div className="field-block">
-              <label className="field-label">Your name</label>
-              <input
-                type="text"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                placeholder="Enter your name"
-                className="field-input"
-              />
-            </div>
+                <div className="field-block">
+                  <label className="field-label">Your name</label>
+                  <input
+                    type="text"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value)}
+                    placeholder="Enter your name"
+                    className="field-input"
+                  />
+                </div>
 
-            <div className="field-block">
-              <label className="field-label">Join code</label>
-              <input
-                type="text"
-                value={joinCodeInput}
-                onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                placeholder="ABCD"
-                className="field-input"
-              />
-            </div>
+                <div className="field-block">
+                  <label className="field-label">Join code</label>
+                  <input
+                    type="text"
+                    value={joinCodeInput}
+                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                    placeholder="ABCD"
+                    className="field-input"
+                  />
+                </div>
 
-            <button onClick={joinGame} disabled={isJoining} className="primary-button full-width">
-              {isJoining ? 'Joining...' : 'Join Game'}
-            </button>
+                <button onClick={joinGame} disabled={isJoining} className="primary-button full-width">
+                  {isJoining ? 'Joining...' : 'Join Game'}
+                </button>
 
-            <div className="status-box">
-              <p><strong>Join status:</strong> {joinMessage || 'Waiting'}</p>
-            </div>
-
-            {joinedPlayer && (
-              <div className="result-box">
-                <p><strong>Name:</strong> {joinedPlayer.name}</p>
-                <p><strong>Score:</strong> {formatMoney(joinedPlayer.total_score)}</p>
+                <div className="status-box">
+                  <p><strong>Join status:</strong> {joinMessage || 'Waiting'}</p>
+                </div>
               </div>
-            )}
-          </div>
-
-          <div className="panel player-panel">
-            <h2>Current Question</h2>
-
-            <button onClick={() => loadQuestionForPlayer(true)} disabled={!joinedPlayer} className="full-width">
-              Load Current Question
-            </button>
-
-            <div className="status-box">
-              <p><strong>Status:</strong> {playerQuestionMessage || 'Waiting'}</p>
             </div>
+          )}
 
-            {!loadedPlayerQuestion && (
-              <div className="result-box">
-                <p>Once the host opens a question, it will appear here.</p>
-              </div>
-            )}
-
-            {loadedPlayerQuestion && (
-              <div className="question-card">
-                <div className="question-card-top">
+          {joinedPlayer && playerShowLiveQuestion && (
+            <div
+              style={{
+                minHeight: '100vh',
+                maxWidth: '760px',
+                margin: '0 auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
+                paddingBottom: '24px',
+              }}
+            >
+              <div
+                className="panel player-panel"
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <div className="question-card-top" style={{ marginBottom: '16px' }}>
                   <span className="question-round">Question {loadedPlayerQuestion.question_number}</span>
                   <span className={`question-status question-status-${loadedPlayerQuestion.status}`}>
-                    {loadedPlayerQuestion.status}
+                    live
                   </span>
                 </div>
 
-                <h3 className="player-question-title">{loadedPlayerQuestion.prompt}</h3>
+                <h2 className="player-question-title" style={{ fontSize: '30px', marginBottom: '18px' }}>
+                  {loadedPlayerQuestion.prompt}
+                </h2>
 
-                <div className="selection-counter">
+                <div className="selection-counter" style={{ fontSize: '16px', marginBottom: '18px' }}>
                   Select exactly 5 answers — <strong>{selectedOptionIds.length} / 5 selected</strong>
                 </div>
 
-                <div className="answers-grid">
-                  {loadedPlayerOptions.map((option) => {
-                    const isSelected = selectedOptionIds.includes(option.id)
-                    const isCorrect = option.is_correct
-                    const showReveal = loadedPlayerQuestion.status === 'revealed'
-                    const selectedWrong = showReveal && isSelected && !isCorrect
+                <div style={{ flex: 1 }}>
+                  <div className="answers-grid">
+                    {loadedPlayerOptions.map((option) => {
+                      const isSelected = selectedOptionIds.includes(option.id)
 
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => togglePlayerOption(option.id)}
-                        disabled={
-                          isSubmitting ||
-                          !!submittedResult ||
-                          loadedPlayerQuestion.status !== 'open' ||
-                          (!isSelected && selectedOptionIds.length >= 5)
-                        }
-                        className={[
-                          'answer-tile',
-                          isSelected ? 'answer-tile-selected' : '',
-                          showReveal && isCorrect ? 'answer-tile-correct' : '',
-                          selectedWrong ? 'answer-tile-wrong' : '',
-                        ].join(' ').trim()}
-                      >
-                        <span className="answer-number">{option.option_number}</span>
-                        <span className="answer-text">{option.text}</span>
-                        {showReveal && isCorrect && <span className="answer-badge">✓</span>}
-                        {selectedWrong && <span className="answer-badge">✕</span>}
-                      </button>
-                    )
-                  })}
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => togglePlayerOption(option.id)}
+                          disabled={
+                            isSubmitting ||
+                            loadedPlayerQuestion.status !== 'open' ||
+                            (!isSelected && selectedOptionIds.length >= 5)
+                          }
+                          className={[
+                            'answer-tile',
+                            isSelected ? 'answer-tile-selected' : '',
+                          ].join(' ').trim()}
+                          style={
+                            isSelected
+                              ? {
+                                  borderColor: 'var(--pink)',
+                                  background:
+                                    'linear-gradient(135deg, rgba(255, 62, 168, 0.18), rgba(66, 198, 255, 0.18)), #f8fafc',
+                                  boxShadow:
+                                    '0 0 0 3px rgba(255,62,168,0.25), 0 0 18px rgba(255,62,168,0.35), 0 0 22px rgba(66,198,255,0.28)',
+                                  transform: 'scale(1.02)',
+                                }
+                              : undefined
+                          }
+                        >
+                          <span className="answer-number">{option.option_number}</span>
+                          <span className="answer-text">{option.text}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
 
-                <button
-                  onClick={submitAnswers}
-                  disabled={
-                    isSubmitting ||
-                    !!submittedResult ||
-                    loadedPlayerQuestion.status !== 'open'
-                  }
-                  className="primary-button full-width"
-                >
-                  {isSubmitting ? 'Submitting...' : submittedResult ? 'Submitted' : 'Submit Answers'}
-                </button>
+                <div style={{ marginTop: 'auto', paddingTop: '10px' }}>
+                  <button
+                    onClick={submitAnswers}
+                    disabled={
+                      isSubmitting ||
+                      loadedPlayerQuestion.status !== 'open' ||
+                      selectedOptionIds.length !== 5
+                    }
+                    className="primary-button full-width"
+                    style={{
+                      paddingTop: '16px',
+                      paddingBottom: '16px',
+                      fontSize: '18px',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {isSubmitting ? 'Submitting...' : 'Submit Answers'}
+                  </button>
+
+                  <div className="status-box">
+                    <p><strong>Status:</strong> {submissionMessage || playerQuestionMessage || 'Waiting'}</p>
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
-
-          <div className="panel player-panel">
-            <h2>Your Result</h2>
-
-            <div className="status-box">
-              <p><strong>Submission status:</strong> {submissionMessage || 'Waiting'}</p>
             </div>
+          )}
 
-            {submittedResult && loadedPlayerQuestion?.status !== 'revealed' && (
-              <div className="result-box">
-                <p><strong>Answers locked in.</strong></p>
-                <p>Wait for the host to reveal the correct answers.</p>
-              </div>
-            )}
+          {joinedPlayer && playerWaitingAfterSubmit && (
+            <div
+              style={{
+                minHeight: '100vh',
+                maxWidth: '760px',
+                margin: '0 auto',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingBottom: '24px',
+              }}
+            >
+              <div
+                className="panel player-panel"
+                style={{
+                  width: '100%',
+                  textAlign: 'center',
+                  paddingTop: '48px',
+                  paddingBottom: '48px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '52px',
+                    lineHeight: 1,
+                    marginBottom: '18px',
+                  }}
+                >
+                  ✓
+                </div>
 
-            {submittedResult && loadedPlayerQuestion?.status === 'revealed' && (
-              <div className="result-box">
-                <p><strong>Correct:</strong> {submittedResult.correct_count} / 5</p>
-                <p><strong>Score:</strong> {formatMoney(scoreFromCorrectCount(submittedResult.correct_count))}</p>
-                <p><strong>Tiebreak time:</strong> stored internally</p>
+                <h2 style={{ fontSize: '34px', marginBottom: '12px' }}>
+                  Answers Submitted
+                </h2>
+
+                <p style={{ fontSize: '18px', color: '#526274', marginBottom: '0' }}>
+                  Waiting for the host to reveal the answers...
+                </p>
+
+                <div className="status-box" style={{ marginTop: '24px', textAlign: 'left' }}>
+                  <p><strong>Question:</strong> {loadedPlayerQuestion?.prompt || 'Waiting'}</p>
+                  <p><strong>Selection:</strong> {selectedOptionIds.length} / 5 locked in</p>
+                  <p><strong>Status:</strong> {submissionMessage || 'Answers submitted.'}</p>
+                </div>
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          )}
+
+          {joinedPlayer && !playerShowLiveQuestion && !playerWaitingAfterSubmit && (
+            <div className="player-layout">
+              <div className="panel player-panel">
+                <h2>Player</h2>
+
+                <div className="result-box">
+                  <p><strong>Name:</strong> {joinedPlayer.name}</p>
+                  <p><strong>Score:</strong> {formatMoney(joinedPlayer.total_score)}</p>
+                </div>
+
+                <button onClick={() => loadQuestionForPlayer(true)} className="full-width">
+                  Refresh Question
+                </button>
+
+                <div className="status-box">
+                  <p><strong>Status:</strong> {playerQuestionMessage || 'Waiting'}</p>
+                </div>
+
+                {!loadedPlayerQuestion && (
+                  <div className="result-box">
+                    <p>Once the host opens a question, it will appear here.</p>
+                  </div>
+                )}
+
+                {loadedPlayerQuestion && playerQuestionIsRevealed && (
+                  <div className="question-card">
+                    <div className="question-card-top">
+                      <span className="question-round">Question {loadedPlayerQuestion.question_number}</span>
+                      <span className={`question-status question-status-${loadedPlayerQuestion.status}`}>
+                        {loadedPlayerQuestion.status}
+                      </span>
+                    </div>
+
+                    <h3 className="player-question-title">{loadedPlayerQuestion.prompt}</h3>
+
+                    <div className="answers-grid">
+                      {loadedPlayerOptions.map((option) => {
+                        const isSelected = selectedOptionIds.includes(option.id)
+                        const isCorrect = option.is_correct
+                        const selectedWrong = isSelected && !isCorrect
+
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            disabled
+                            className={[
+                              'answer-tile',
+                              isSelected ? 'answer-tile-selected' : '',
+                              isCorrect ? 'answer-tile-correct' : '',
+                              selectedWrong ? 'answer-tile-wrong' : '',
+                            ].join(' ').trim()}
+                          >
+                            <span className="answer-number">{option.option_number}</span>
+                            <span className="answer-text">{option.text}</span>
+                            {isCorrect && <span className="answer-badge">✓</span>}
+                            {selectedWrong && <span className="answer-badge">✕</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {submittedResult && (
+                      <div className="result-box">
+                        <p><strong>Correct:</strong> {submittedResult.correct_count} / 5</p>
+                        <p><strong>Score:</strong> {formatMoney(scoreFromCorrectCount(submittedResult.correct_count))}</p>
+                        <p><strong>Tiebreak time:</strong> stored internally</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {loadedPlayerQuestion && loadedPlayerQuestion.status === 'closed' && !submittedResult && (
+                  <div className="result-box">
+                    <p><strong>Question closed.</strong></p>
+                    <p>The host has locked answers. Wait for the reveal.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {viewMode === 'screen' && (

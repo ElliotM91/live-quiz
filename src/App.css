@@ -512,11 +512,17 @@ h3 {
 }
 
 .answer-tile-selected {
-  border-color: rgba(255, 62, 168, 0.7);
+  border-color: var(--pink);
   background:
-    linear-gradient(135deg, rgba(255, 62, 168, 0.08), rgba(66, 198, 255, 0.1)),
+    linear-gradient(135deg, rgba(255, 62, 168, 0.18), rgba(66, 198, 255, 0.18)),
     #f8fafc;
-  box-shadow: 0 0 0 3px rgba(255, 62, 168, 0.08);
+
+  box-shadow:
+    0 0 0 3px rgba(255, 62, 168, 0.25),
+    0 0 18px rgba(255, 62, 168, 0.35),
+    0 0 22px rgba(66, 198, 255, 0.28);
+
+  transform: scale(1.02);
 }
 
 .answer-tile-correct {
