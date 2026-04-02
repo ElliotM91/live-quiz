@@ -209,6 +209,24 @@ function App() {
   const playerWaitingAfterSubmit = !!submittedResult && !playerQuestionIsRevealed
   const playerShowLiveQuestion = !!joinedPlayer && playerQuestionIsOpen && !submittedResult
 
+  const hostLeaderboardPlayers = useMemo(
+    () =>
+      sortLeaderboard(leaderboard).filter(
+        (player) => (player.total_score || 0) > 0 || (player.total_time_ms || 0) > 0
+      ),
+    [leaderboard]
+  )
+
+  const screenLeaderboardPlayers = useMemo(
+    () => hostLeaderboardPlayers.slice(1),
+    [hostLeaderboardPlayers]
+  )
+
+  const playerRevealOptions = useMemo(
+    () => loadedPlayerOptions.filter((option) => selectedOptionIds.includes(option.id)),
+    [loadedPlayerOptions, selectedOptionIds]
+  )
+
   function updateOptionText(index, value) {
     const next = [...answerOptions]
     next[index].text = value
@@ -1196,6 +1214,34 @@ function App() {
     return () => clearInterval(interval)
   }, [viewMode, createdGame, gamePhase, currentQuestion?.id])
 
+  const screenShellStyle = {
+    minHeight: '100vh',
+    background:
+      'radial-gradient(circle at top left, rgba(255, 62, 168, 0.12), transparent 22%), radial-gradient(circle at top right, rgba(66, 198, 255, 0.16), transparent 24%), linear-gradient(180deg, #061128 0%, #081a3a 42%, #091c42 100%)',
+    color: '#fff',
+    padding: '28px 34px 32px',
+  }
+
+  const screenFrameStyle = {
+    maxWidth: '1720px',
+    margin: '0 auto',
+    minHeight: 'calc(100vh - 60px)',
+    display: 'grid',
+    gridTemplateRows: 'auto 1fr',
+    gap: '22px',
+  }
+
+  const screenTopBarStyle = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '24px',
+    fontSize: 'clamp(20px, 1.3vw, 28px)',
+    fontWeight: 700,
+    color: 'rgba(255,255,255,0.92)',
+    letterSpacing: '0.02em',
+  }
+
   return (
     <div className={`app-shell ${viewMode === 'screen' ? 'screen-shell' : ''}`}>
       {viewMode !== 'screen' && (
@@ -1230,17 +1276,8 @@ function App() {
               </>
             )}
 
-            {accessLevel === 'screen' && (
-              <button className="active">
-                Screen View
-              </button>
-            )}
-
-            {accessLevel === 'player' && (
-              <button className="active">
-                Player View
-              </button>
-            )}
+            {accessLevel === 'screen' && <button className="active">Screen View</button>}
+            {accessLevel === 'player' && <button className="active">Player View</button>}
           </div>
         </>
       )}
@@ -1504,9 +1541,9 @@ function App() {
             <div className="panel">
               <h2>Leaderboard Preview</h2>
 
-              {leaderboard.length > 0 ? (
+              {hostLeaderboardPlayers.length > 0 ? (
                 <div className="leaderboard-list">
-                  {leaderboard.map((player, index) => (
+                  {hostLeaderboardPlayers.map((player, index) => (
                     <div key={player.id} className={`leaderboard-row ${index === 0 ? 'leaderboard-row-top' : ''}`}>
                       <div className="leaderboard-rank">#{index + 1}</div>
                       <div className="leaderboard-name">{player.name}</div>
@@ -1730,151 +1767,420 @@ function App() {
           )}
 
           {joinedPlayer && !playerShowLiveQuestion && !playerWaitingAfterSubmit && (
-            <div className="player-layout">
-              <div className="panel player-panel">
-                <h2 style={{ color: '#000' }}>Player</h2>
-
-                <div className="result-box">
-                  <p><strong>Name:</strong> {joinedPlayer.name}</p>
-                  <p><strong>Score:</strong> {formatMoney(joinedPlayer.total_score)}</p>
-                </div>
-
-                <button onClick={() => loadQuestionForPlayer(true)} className="full-width">
-                  Refresh Question
-                </button>
-
-                <div className="status-box">
-                  <p><strong>Status:</strong> {playerQuestionMessage || 'Waiting'}</p>
-                </div>
-
-                {!loadedPlayerQuestion && (
-                  <div className="result-box">
-                    <p>Once the host opens a question, it will appear here.</p>
-                  </div>
-                )}
-
-                {loadedPlayerQuestion && playerQuestionIsRevealed && (
-                  <div className="question-card">
-                    <div className="question-card-top">
+            <>
+              {loadedPlayerQuestion && playerQuestionIsRevealed ? (
+                <div
+                  style={{
+                    minHeight: 'calc(100vh - 120px)',
+                    maxWidth: '760px',
+                    margin: '0 auto',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
+                  <div
+                    className="panel player-panel"
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      paddingTop: '18px',
+                      paddingBottom: '18px',
+                    }}
+                  >
+                    <div className="question-card-top" style={{ marginBottom: '10px' }}>
                       <span className="question-round">Question {loadedPlayerQuestion.question_number}</span>
                       <span className={`question-status question-status-${loadedPlayerQuestion.status}`}>
                         {loadedPlayerQuestion.status}
                       </span>
                     </div>
 
-                    <h3 className="player-question-title" style={{ color: '#000' }}>
+                    <h2
+                      className="player-question-title"
+                      style={{
+                        fontSize: '24px',
+                        marginBottom: '12px',
+                        color: '#000',
+                        textAlign: 'center',
+                      }}
+                    >
                       {loadedPlayerQuestion.prompt}
-                    </h3>
+                    </h2>
 
-                    <div className="answers-grid">
-                      {loadedPlayerOptions.map((option) => {
-                        const isSelected = selectedOptionIds.includes(option.id)
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr',
+                        gap: '10px',
+                      }}
+                    >
+                      {playerRevealOptions.map((option) => {
                         const isCorrect = option.is_correct
-                        const selectedWrong = isSelected && !isCorrect
 
                         return (
-                          <button
+                          <div
                             key={option.id}
-                            type="button"
-                            disabled
-                            className={[
-                              'answer-tile',
-                              isSelected ? 'answer-tile-selected' : '',
-                              isCorrect ? 'answer-tile-correct' : '',
-                              selectedWrong ? 'answer-tile-wrong' : '',
-                            ].join(' ').trim()}
+                            className="answer-tile"
+                            style={{
+                              padding: '14px 16px',
+                              minHeight: 'unset',
+                              fontSize: '16px',
+                              background: isCorrect ? '#dcfce7' : '#fee2e2',
+                              border: `2px solid ${isCorrect ? '#16a34a' : '#dc2626'}`,
+                              boxShadow: 'none',
+                            }}
                           >
-                            <span className="answer-number">{option.option_number}</span>
                             <span className="answer-text">{option.text}</span>
-                            {isCorrect && <span className="answer-badge">✓</span>}
-                            {selectedWrong && <span className="answer-badge">✕</span>}
-                          </button>
+                            <span className="answer-badge" style={{ color: isCorrect ? '#16a34a' : '#dc2626' }}>
+                              {isCorrect ? '✓' : '✕'}
+                            </span>
+                          </div>
                         )
                       })}
                     </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="player-layout">
+                  <div className="panel player-panel">
+                    <h2 style={{ color: '#000' }}>Player</h2>
 
-                    {submittedResult && (
+                    <div className="result-box">
+                      <p><strong>Name:</strong> {joinedPlayer.name}</p>
+                      <p><strong>Score:</strong> {formatMoney(joinedPlayer.total_score)}</p>
+                    </div>
+
+                    <button onClick={() => loadQuestionForPlayer(true)} className="full-width">
+                      Refresh Question
+                    </button>
+
+                    <div className="status-box">
+                      <p><strong>Status:</strong> {playerQuestionMessage || 'Waiting'}</p>
+                    </div>
+
+                    {!loadedPlayerQuestion && (
                       <div className="result-box">
-                        <p><strong>Correct:</strong> {submittedResult.correct_count} / 5</p>
-                        <p><strong>Score:</strong> {formatMoney(scoreFromCorrectCount(submittedResult.correct_count))}</p>
-                        <p><strong>Tiebreak time:</strong> stored internally</p>
+                        <p>Once the host opens a question, it will appear here.</p>
+                      </div>
+                    )}
+
+                    {loadedPlayerQuestion && loadedPlayerQuestion.status === 'closed' && !submittedResult && (
+                      <div className="result-box">
+                        <p><strong>Question closed.</strong></p>
+                        <p>The host has locked answers. Wait for the reveal.</p>
                       </div>
                     )}
                   </div>
-                )}
-
-                {loadedPlayerQuestion && loadedPlayerQuestion.status === 'closed' && !submittedResult && (
-                  <div className="result-box">
-                    <p><strong>Question closed.</strong></p>
-                    <p>The host has locked answers. Wait for the reveal.</p>
-                  </div>
-                )}
-              </div>
-            </div>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
 
       {viewMode === 'screen' && (
-        <div className="screen-view">
+        <div style={screenShellStyle}>
           {!createdGame && (
-            <div className="screen-stage">
-              <div className="screen-center-card">
-                <div className="screen-kicker">Live Quiz</div>
-                <h1>No game loaded</h1>
-                <p>Use a valid screen URL with a join code to attach this display to a game.</p>
+            <div style={screenFrameStyle}>
+              <div style={screenTopBarStyle}>
+                <span>PRIZE FIGHT</span>
+                <span>Screen View</span>
+              </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    minHeight: '72vh',
+                    borderRadius: '36px',
+                    background:
+                      'radial-gradient(circle at top left, rgba(255, 62, 168, 0.14), transparent 28%), radial-gradient(circle at top right, rgba(66, 198, 255, 0.16), transparent 30%), rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    padding: '60px',
+                    boxShadow: '0 24px 70px rgba(0,0,0,0.3)',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 'clamp(22px, 1.6vw, 30px)',
+                      letterSpacing: '0.18em',
+                      textTransform: 'uppercase',
+                      opacity: 0.78,
+                      marginBottom: '18px',
+                    }}
+                  >
+                    Live Quiz
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 'clamp(54px, 5vw, 92px)',
+                      fontWeight: 800,
+                      lineHeight: 1.05,
+                      marginBottom: '18px',
+                    }}
+                  >
+                    No game loaded
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 'clamp(24px, 2vw, 38px)',
+                      maxWidth: '1000px',
+                      lineHeight: 1.35,
+                      opacity: 0.92,
+                    }}
+                  >
+                    Use a valid screen URL with a join code to attach this display to a game.
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
           {createdGame && gamePhase === GAME_PHASES.LOBBY && (
-            <div className="screen-stage">
-              <div className="screen-topline">
+            <div style={screenFrameStyle}>
+              <div style={screenTopBarStyle}>
                 <span>Round {createdGame.current_question_number}</span>
                 <span>{playersInGame.length} players joined</span>
               </div>
 
-              <div className="screen-center-card lobby-card">
-                <div className="screen-kicker">Join now</div>
-                <div className="big-join-code">{createdGame.join_code}</div>
-                <p className="screen-subcopy">Open the player page on your phone and enter the join code.</p>
+              <div
+                style={{
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    minHeight: '72vh',
+                    borderRadius: '40px',
+                    background:
+                      'radial-gradient(circle at top left, rgba(255, 62, 168, 0.16), transparent 28%), radial-gradient(circle at top right, rgba(66, 198, 255, 0.18), transparent 30%), rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    boxShadow: '0 26px 70px rgba(0,0,0,0.32)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    padding: '70px 50px',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 'clamp(24px, 1.6vw, 32px)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.22em',
+                      opacity: 0.78,
+                      marginBottom: '24px',
+                    }}
+                  >
+                    Join now
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 'clamp(140px, 18vw, 320px)',
+                      fontWeight: 900,
+                      letterSpacing: '0.12em',
+                      lineHeight: 0.95,
+                      marginBottom: '30px',
+                      textShadow:
+                        '0 0 14px rgba(255,255,255,0.7), 0 0 28px rgba(255,62,168,0.45), 0 0 32px rgba(66,198,255,0.35)',
+                    }}
+                  >
+                    {createdGame.join_code}
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 'clamp(30px, 2.2vw, 44px)',
+                      lineHeight: 1.35,
+                      opacity: 0.95,
+                      maxWidth: '1100px',
+                    }}
+                  >
+                    Open the player page on your phone and enter the join code.
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
           {createdGame && gamePhase === GAME_PHASES.QUESTION_READY && (
-            <div className="screen-stage">
-              <div className="screen-topline">
+            <div style={screenFrameStyle}>
+              <div style={screenTopBarStyle}>
                 <span>Join code {createdGame.join_code}</span>
                 <span>{playersInGame.length} players joined</span>
               </div>
 
-              <div className="screen-center-card">
-                <div className="screen-kicker">Get ready</div>
-                <h1>Next question coming up</h1>
-                <p>The host is preparing the round.</p>
+              <div
+                style={{
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    minHeight: '72vh',
+                    borderRadius: '40px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    padding: '60px',
+                    boxShadow: '0 26px 70px rgba(0,0,0,0.32)',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 'clamp(22px, 1.5vw, 30px)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.2em',
+                      opacity: 0.78,
+                      marginBottom: '22px',
+                    }}
+                  >
+                    Get ready
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 'clamp(58px, 5vw, 96px)',
+                      fontWeight: 800,
+                      lineHeight: 1.05,
+                      marginBottom: '18px',
+                    }}
+                  >
+                    Next question coming up
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 'clamp(28px, 2.1vw, 40px)',
+                      opacity: 0.92,
+                    }}
+                  >
+                    The host is preparing the round.
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
           {createdGame && gamePhase === GAME_PHASES.QUESTION_OPEN && (
-            <div className="screen-stage">
-              <div className="screen-topline">
+            <div style={screenFrameStyle}>
+              <div style={screenTopBarStyle}>
                 <span>Join code {createdGame.join_code}</span>
                 <span>{submissionCount} submissions</span>
               </div>
 
-              <div className="screen-question-layout">
-                <div className="screen-question-header">
-                  <div className="screen-kicker">Pick exactly 5 answers</div>
-                  <h1>{currentQuestion?.prompt || 'Question loading...'}</h1>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateRows: 'auto 1fr',
+                  gap: '22px',
+                }}
+              >
+                <div
+                  style={{
+                    textAlign: 'center',
+                    padding: '4px 40px 0',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 'clamp(18px, 1.1vw, 24px)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.18em',
+                      opacity: 0.78,
+                      marginBottom: '12px',
+                    }}
+                  >
+                    Pick exactly 5 answers
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 'clamp(46px, 4.2vw, 84px)',
+                      fontWeight: 800,
+                      lineHeight: 1.08,
+                      maxWidth: '1500px',
+                      margin: '0 auto',
+                    }}
+                  >
+                    {currentQuestion?.prompt || 'Question loading...'}
+                  </div>
                 </div>
 
-                <div className="screen-answers-grid">
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '18px',
+                    alignContent: 'center',
+                  }}
+                >
                   {currentQuestionOptions.map((option) => (
-                    <div key={option.id} className="screen-answer-card">
-                      <div className="screen-answer-number">{option.option_number}</div>
-                      <div className="screen-answer-text">{option.text}</div>
+                    <div
+                      key={option.id}
+                      style={{
+                        minHeight: '126px',
+                        borderRadius: '26px',
+                        background:
+                          'linear-gradient(135deg, rgba(255,62,168,0.08), rgba(66,198,255,0.08)), rgba(255,255,255,0.07)',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        display: 'grid',
+                        gridTemplateColumns: '76px 1fr',
+                        alignItems: 'center',
+                        gap: '16px',
+                        padding: '22px 24px',
+                        boxShadow: '0 18px 34px rgba(0,0,0,0.18)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '54px',
+                          height: '54px',
+                          borderRadius: '999px',
+                          background: 'linear-gradient(135deg, rgba(255,62,168,0.88), rgba(66,198,255,0.88))',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 900,
+                          fontSize: '24px',
+                          color: '#fff',
+                        }}
+                      >
+                        {option.option_number}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 'clamp(24px, 1.8vw, 36px)',
+                          fontWeight: 700,
+                          lineHeight: 1.18,
+                          color: '#fff',
+                        }}
+                      >
+                        {option.text}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1883,77 +2189,259 @@ function App() {
           )}
 
           {createdGame && gamePhase === GAME_PHASES.QUESTION_CLOSED && (
-            <div className="screen-stage">
-              <div className="screen-topline">
+            <div style={screenFrameStyle}>
+              <div style={screenTopBarStyle}>
                 <span>Join code {createdGame.join_code}</span>
                 <span>{submissionCount} submissions received</span>
               </div>
 
-              <div className="screen-center-card">
-                <div className="screen-kicker">Answers locked</div>
-                <h1>{currentQuestion?.prompt || 'Question closed'}</h1>
-                <p>Stand by for the reveal.</p>
+              <div
+                style={{
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    minHeight: '72vh',
+                    borderRadius: '40px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    padding: '60px',
+                    boxShadow: '0 26px 70px rgba(0,0,0,0.32)',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 'clamp(22px, 1.5vw, 30px)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.2em',
+                      opacity: 0.78,
+                      marginBottom: '22px',
+                    }}
+                  >
+                    Answers locked
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 'clamp(54px, 4.8vw, 92px)',
+                      fontWeight: 800,
+                      lineHeight: 1.08,
+                      maxWidth: '1450px',
+                      marginBottom: '18px',
+                    }}
+                  >
+                    {currentQuestion?.prompt || 'Question closed'}
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 'clamp(28px, 2.1vw, 40px)',
+                      opacity: 0.92,
+                    }}
+                  >
+                    Stand by for the reveal.
+                  </div>
+                </div>
               </div>
             </div>
           )}
 
           {createdGame && gamePhase === GAME_PHASES.ANSWER_REVEAL && (
-            <div className="screen-stage">
-              <div className="screen-topline">
+            <div style={screenFrameStyle}>
+              <div style={screenTopBarStyle}>
                 <span>Join code {createdGame.join_code}</span>
                 <span>Answer Reveal</span>
               </div>
 
-              <div className="screen-question-layout">
-                <div className="screen-question-header">
-                  <div className="screen-kicker">Correct answers</div>
-                  <h1>{currentQuestion?.prompt || 'Reveal'}</h1>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateRows: 'auto 1fr',
+                  gap: '22px',
+                }}
+              >
+                <div
+                  style={{
+                    textAlign: 'center',
+                    padding: '4px 40px 0',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 'clamp(18px, 1.1vw, 24px)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.18em',
+                      opacity: 0.78,
+                      marginBottom: '12px',
+                    }}
+                  >
+                    Correct answers
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 'clamp(46px, 4.2vw, 84px)',
+                      fontWeight: 800,
+                      lineHeight: 1.08,
+                      maxWidth: '1500px',
+                      margin: '0 auto',
+                    }}
+                  >
+                    {currentQuestion?.prompt || 'Reveal'}
+                  </div>
                 </div>
 
-                <div className="screen-answers-grid">
-                  {currentQuestionOptions.map((option) => (
-                    <div
-                      key={option.id}
-                      className={`screen-answer-card ${option.is_correct ? 'screen-answer-card-correct' : 'screen-answer-card-dim'}`}
-                    >
-                      <div className="screen-answer-number">{option.option_number}</div>
-                      <div className="screen-answer-text">{option.text}</div>
-                      {option.is_correct && <div className="screen-answer-check">✓</div>}
-                    </div>
-                  ))}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '18px',
+                    alignContent: 'center',
+                  }}
+                >
+                  {currentQuestionOptions.map((option) => {
+                    const isCorrect = option.is_correct
+
+                    return (
+                      <div
+                        key={option.id}
+                        style={{
+                          minHeight: '126px',
+                          borderRadius: '26px',
+                          background: isCorrect
+                            ? 'linear-gradient(135deg, rgba(40,255,170,0.22), rgba(66,198,255,0.14)), rgba(255,255,255,0.1)'
+                            : 'rgba(255,255,255,0.05)',
+                          border: `1px solid ${isCorrect ? 'rgba(74,222,128,0.8)' : 'rgba(255,255,255,0.1)'}`,
+                          opacity: isCorrect ? 1 : 0.42,
+                          display: 'grid',
+                          gridTemplateColumns: '76px 1fr auto',
+                          alignItems: 'center',
+                          gap: '16px',
+                          padding: '22px 24px',
+                          boxShadow: '0 18px 34px rgba(0,0,0,0.18)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '54px',
+                            height: '54px',
+                            borderRadius: '999px',
+                            background: 'linear-gradient(135deg, rgba(255,62,168,0.88), rgba(66,198,255,0.88))',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 900,
+                            fontSize: '24px',
+                            color: '#fff',
+                          }}
+                        >
+                          {option.option_number}
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: 'clamp(24px, 1.8vw, 36px)',
+                            fontWeight: 700,
+                            lineHeight: 1.18,
+                            color: '#fff',
+                          }}
+                        >
+                          {option.text}
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: '42px',
+                            fontWeight: 900,
+                            color: '#fff',
+                            opacity: isCorrect ? 1 : 0,
+                          }}
+                        >
+                          ✓
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             </div>
           )}
 
           {createdGame && gamePhase === GAME_PHASES.LEADERBOARD && (
-            <div className="screen-stage">
-              <div className="screen-topline">
+            <div style={screenFrameStyle}>
+              <div style={screenTopBarStyle}>
                 <span>Join code {createdGame.join_code}</span>
-                <span>Leaderboard</span>
+                <span>Results</span>
               </div>
 
-              <div className="screen-leaderboard">
-                <div className="screen-kicker">Current standings</div>
-                <h1>Leaderboard</h1>
-
-                {leaderboard.length === 0 ? (
-                  <div className="screen-center-card compact-card">
-                    <p>No leaderboard data yet.</p>
+              <div
+                style={{
+                  display: 'grid',
+                  alignContent: 'center',
+                  gap: '18px',
+                  minHeight: '100%',
+                }}
+              >
+                {screenLeaderboardPlayers.length === 0 ? (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      fontSize: 'clamp(40px, 3.2vw, 60px)',
+                      fontWeight: 700,
+                      paddingTop: '120px',
+                    }}
+                  >
+                    No leaderboard data yet.
                   </div>
                 ) : (
-                  <div className="screen-leaderboard-list">
-                    {leaderboard.map((player, index) => (
+                  screenLeaderboardPlayers.map((player) => (
+                    <div
+                      key={player.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0, 1fr) auto',
+                        alignItems: 'center',
+                        gap: '28px',
+                        padding: '28px 30px',
+                        minHeight: '120px',
+                        borderRadius: '28px',
+                        background:
+                          'linear-gradient(135deg, rgba(255,62,168,0.07), rgba(66,198,255,0.08)), rgba(255,255,255,0.06)',
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        boxShadow: '0 16px 30px rgba(0,0,0,0.18)',
+                      }}
+                    >
                       <div
-                        key={player.id}
-                        className={`screen-leaderboard-row ${index === 0 ? 'screen-leaderboard-row-top' : ''}`}
+                        style={{
+                          fontSize: 'clamp(42px, 3.2vw, 66px)',
+                          fontWeight: 800,
+                          lineHeight: 1.04,
+                          color: '#fff',
+                        }}
                       >
-                        <div className="screen-leaderboard-rank">#{index + 1}</div>
-                        <div className="screen-leaderboard-name">{player.name}</div>
-                        <div className="screen-leaderboard-score">{formatMoney(player.total_score)}</div>
+                        {player.name}
                       </div>
-                    ))}
-                  </div>
+
+                      <div
+                        style={{
+                          fontSize: 'clamp(42px, 3.2vw, 66px)',
+                          fontWeight: 900,
+                          lineHeight: 1.04,
+                          color: '#fff',
+                        }}
+                      >
+                        {formatMoney(player.total_score)}
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             </div>
