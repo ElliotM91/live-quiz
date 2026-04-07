@@ -4,9 +4,11 @@ import { supabase } from './supabase'
 
 const HOST_KEY = 'host123'
 const SCREEN_KEY = 'screen123'
+const HOLDING_LOGO_URL = '/prize-fight-logo.png'
 
 const GAME_PHASES = {
   LOBBY: 'lobby',
+  HOLDING: 'holding',
   QUESTION_READY: 'question_ready',
   QUESTION_OPEN: 'question_open',
   QUESTION_CLOSED: 'question_closed',
@@ -58,6 +60,7 @@ function sortLeaderboard(players) {
 
 function resolveGamePhase(gameStatus, questionStatus) {
   if (gameStatus === GAME_PHASES.LEADERBOARD) return GAME_PHASES.LEADERBOARD
+  if (gameStatus === GAME_PHASES.HOLDING) return GAME_PHASES.HOLDING
   if (gameStatus === GAME_PHASES.QUESTION_READY) return GAME_PHASES.QUESTION_READY
   if (gameStatus === GAME_PHASES.QUESTION_OPEN) return GAME_PHASES.QUESTION_OPEN
   if (gameStatus === GAME_PHASES.QUESTION_CLOSED) return GAME_PHASES.QUESTION_CLOSED
@@ -75,6 +78,8 @@ function getPhaseLabel(phase) {
   switch (phase) {
     case GAME_PHASES.LOBBY:
       return 'Lobby'
+    case GAME_PHASES.HOLDING:
+      return 'Holding'
     case GAME_PHASES.QUESTION_READY:
       return 'Question Ready'
     case GAME_PHASES.QUESTION_OPEN:
@@ -94,6 +99,8 @@ function getPhaseDescription(phase) {
   switch (phase) {
     case GAME_PHASES.LOBBY:
       return 'Waiting for players and the next question.'
+    case GAME_PHASES.HOLDING:
+      return 'Show logo / holding screen on the big display.'
     case GAME_PHASES.QUESTION_READY:
       return 'Question saved and ready for the host to open.'
     case GAME_PHASES.QUESTION_OPEN:
@@ -113,6 +120,8 @@ function getNextActionLabel(phase) {
   switch (phase) {
     case GAME_PHASES.LOBBY:
       return 'Load a template or write a question.'
+    case GAME_PHASES.HOLDING:
+      return 'Return to join, question or leaderboard when ready.'
     case GAME_PHASES.QUESTION_READY:
       return 'Open the question when ready.'
     case GAME_PHASES.QUESTION_OPEN:
@@ -196,6 +205,16 @@ function App() {
     if (!createdGame) return ''
     return `${window.location.origin}/?mode=screen&key=${SCREEN_KEY}&code=${createdGame.join_code}`
   }, [createdGame])
+
+  const playerJoinUrl = useMemo(() => {
+    if (!createdGame) return ''
+    return `${window.location.origin}/?code=${createdGame.join_code}`
+  }, [createdGame])
+
+  const qrCodeUrl = useMemo(() => {
+    if (!playerJoinUrl) return ''
+    return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(playerJoinUrl)}`
+  }, [playerJoinUrl])
 
   const canOpenQuestion = !!createdGame && !!currentQuestion && currentQuestion.status === 'draft'
   const canCloseQuestion = !!createdGame && !!currentQuestion && currentQuestion.status === 'open'
@@ -736,25 +755,18 @@ function App() {
     setQuestionMessage('Answers are now revealed.')
   }
 
+  async function showJoinScreen() {
+    if (!createdGame) return
+    await updateGameStatus(GAME_PHASES.LOBBY, 'Showing join screen.')
+  }
+
+  async function showHoldingScreen() {
+    if (!createdGame) return
+    await updateGameStatus(GAME_PHASES.HOLDING, 'Showing holding screen.')
+  }
+
   async function showQuestionOnScreen() {
     if (!createdGame) return
-
-    const nextPhase = resolveGamePhase(createdGame.status, currentQuestion?.status)
-
-    if (nextPhase === GAME_PHASES.LEADERBOARD) {
-      if (currentQuestion?.status === 'revealed') {
-        await updateGameStatus(GAME_PHASES.ANSWER_REVEAL, 'Showing answer reveal on screen.')
-      } else if (currentQuestion?.status === 'closed') {
-        await updateGameStatus(GAME_PHASES.QUESTION_CLOSED, 'Showing locked question on screen.')
-      } else if (currentQuestion?.status === 'open') {
-        await updateGameStatus(GAME_PHASES.QUESTION_OPEN, 'Showing live question on screen.')
-      } else if (currentQuestion?.status === 'draft') {
-        await updateGameStatus(GAME_PHASES.QUESTION_READY, 'Question ready on screen.')
-      } else {
-        await updateGameStatus(GAME_PHASES.LOBBY, 'Showing lobby screen.')
-      }
-      return
-    }
 
     if (currentQuestion?.status === 'revealed') {
       await updateGameStatus(GAME_PHASES.ANSWER_REVEAL, 'Showing answer reveal on screen.')
@@ -765,7 +777,7 @@ function App() {
     } else if (currentQuestion?.status === 'draft') {
       await updateGameStatus(GAME_PHASES.QUESTION_READY, 'Question ready on screen.')
     } else {
-      await updateGameStatus(GAME_PHASES.LOBBY, 'Showing lobby screen.')
+      await updateGameStatus(GAME_PHASES.LOBBY, 'Showing join screen.')
     }
   }
 
@@ -1170,6 +1182,9 @@ function App() {
       } else {
         setAccessLevel('player')
         setViewMode('player')
+        if (code) {
+          setJoinCodeInput(code.toUpperCase())
+        }
       }
     }
 
@@ -1368,9 +1383,31 @@ function App() {
 
               <div className="control-stack">
                 <button
+                  onClick={showJoinScreen}
+                  disabled={!createdGame}
+                  className={gamePhase === GAME_PHASES.LOBBY ? 'primary-button' : ''}
+                >
+                  Show Join Screen
+                </button>
+
+                <button
+                  onClick={showHoldingScreen}
+                  disabled={!createdGame}
+                  className={gamePhase === GAME_PHASES.HOLDING ? 'primary-button' : ''}
+                >
+                  Show Holding Screen
+                </button>
+
+                <button
                   onClick={showQuestionOnScreen}
                   disabled={!canShowQuestionOnScreen}
-                  className={gamePhase !== GAME_PHASES.LEADERBOARD ? 'primary-button' : ''}
+                  className={
+                    gamePhase !== GAME_PHASES.LEADERBOARD &&
+                    gamePhase !== GAME_PHASES.LOBBY &&
+                    gamePhase !== GAME_PHASES.HOLDING
+                      ? 'primary-button'
+                      : ''
+                  }
                 >
                   Show Question Screen
                 </button>
@@ -1948,11 +1985,11 @@ function App() {
             </div>
           )}
 
-          {createdGame && gamePhase === GAME_PHASES.LOBBY && (
+          {createdGame && gamePhase === GAME_PHASES.HOLDING && (
             <div style={screenFrameStyle}>
               <div style={screenTopBarStyle}>
-                <span>Round {createdGame.current_question_number}</span>
-                <span>{playersInGame.length} players joined</span>
+                <span>PRIZE FIGHT</span>
+                <span>Holding Screen</span>
               </div>
 
               <div
@@ -1967,24 +2004,71 @@ function App() {
                     minHeight: '72vh',
                     borderRadius: '40px',
                     background:
+                      'radial-gradient(circle at top left, rgba(255, 62, 168, 0.12), transparent 28%), radial-gradient(circle at top right, rgba(66, 198, 255, 0.14), transparent 30%), rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    boxShadow: '0 26px 70px rgba(0,0,0,0.32)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '50px',
+                  }}
+                >
+                  <img
+                    src={HOLDING_LOGO_URL}
+                    alt="Prize Fight logo"
+                    style={{
+                      maxWidth: 'min(88vw, 1100px)',
+                      maxHeight: '60vh',
+                      width: 'auto',
+                      height: 'auto',
+                      objectFit: 'contain',
+                      display: 'block',
+                    }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {createdGame && gamePhase === GAME_PHASES.LOBBY && (
+            <div style={screenFrameStyle}>
+              <div style={screenTopBarStyle}>
+                <span>Round {createdGame.current_question_number}</span>
+                <span>{playersInGame.length} players joined</span>
+              </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1.2fr 0.8fr',
+                  gap: '28px',
+                  alignItems: 'stretch',
+                }}
+              >
+                <div
+                  style={{
+                    borderRadius: '40px',
+                    background:
                       'radial-gradient(circle at top left, rgba(255, 62, 168, 0.16), transparent 28%), radial-gradient(circle at top right, rgba(66, 198, 255, 0.18), transparent 30%), rgba(255,255,255,0.06)',
                     border: '1px solid rgba(255,255,255,0.12)',
                     boxShadow: '0 26px 70px rgba(0,0,0,0.32)',
                     display: 'flex',
                     flexDirection: 'column',
-                    alignItems: 'center',
                     justifyContent: 'center',
-                    textAlign: 'center',
-                    padding: '70px 50px',
+                    padding: '60px 56px',
+                    minHeight: '72vh',
                   }}
                 >
                   <div
                     style={{
-                      fontSize: 'clamp(24px, 1.6vw, 32px)',
+                      fontSize: 'clamp(22px, 1.4vw, 30px)',
                       textTransform: 'uppercase',
-                      letterSpacing: '0.22em',
+                      letterSpacing: '0.2em',
                       opacity: 0.78,
-                      marginBottom: '24px',
+                      marginBottom: '22px',
                     }}
                   >
                     Join now
@@ -1992,11 +2076,11 @@ function App() {
 
                   <div
                     style={{
-                      fontSize: 'clamp(140px, 18vw, 320px)',
+                      fontSize: 'clamp(120px, 12vw, 220px)',
                       fontWeight: 900,
                       letterSpacing: '0.12em',
                       lineHeight: 0.95,
-                      marginBottom: '30px',
+                      marginBottom: '24px',
                       textShadow:
                         '0 0 14px rgba(255,255,255,0.7), 0 0 28px rgba(255,62,168,0.45), 0 0 32px rgba(66,198,255,0.35)',
                     }}
@@ -2006,13 +2090,50 @@ function App() {
 
                   <div
                     style={{
-                      fontSize: 'clamp(30px, 2.2vw, 44px)',
+                      fontSize: 'clamp(26px, 1.9vw, 38px)',
                       lineHeight: 1.35,
                       opacity: 0.95,
-                      maxWidth: '1100px',
+                      maxWidth: '760px',
                     }}
                   >
-                    Open the player page on your phone and enter the join code.
+                    Scan the QR code or open the player page on your phone and enter the room code.
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    borderRadius: '40px',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    boxShadow: '0 26px 70px rgba(0,0,0,0.32)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '34px',
+                    minHeight: '72vh',
+                  }}
+                >
+                  <div
+                    style={{
+                      background: '#fff',
+                      borderRadius: '28px',
+                      padding: '22px',
+                      boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+                    }}
+                  >
+                    {qrCodeUrl ? (
+                      <img
+                        src={qrCodeUrl}
+                        alt="QR code to join the game"
+                        style={{
+                          width: 'min(30vw, 360px)',
+                          maxWidth: '360px',
+                          minWidth: '220px',
+                          height: 'auto',
+                          display: 'block',
+                        }}
+                      />
+                    ) : null}
                   </div>
                 </div>
               </div>
