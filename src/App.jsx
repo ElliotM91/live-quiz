@@ -59,8 +59,9 @@ function sortLeaderboard(players) {
 }
 
 function resolveGamePhase(gameStatus, questionStatus) {
-  if (gameStatus === GAME_PHASES.LEADERBOARD) return GAME_PHASES.LEADERBOARD
+  if (gameStatus === GAME_PHASES.LOBBY) return GAME_PHASES.LOBBY
   if (gameStatus === GAME_PHASES.HOLDING) return GAME_PHASES.HOLDING
+  if (gameStatus === GAME_PHASES.LEADERBOARD) return GAME_PHASES.LEADERBOARD
   if (gameStatus === GAME_PHASES.QUESTION_READY) return GAME_PHASES.QUESTION_READY
   if (gameStatus === GAME_PHASES.QUESTION_OPEN) return GAME_PHASES.QUESTION_OPEN
   if (gameStatus === GAME_PHASES.QUESTION_CLOSED) return GAME_PHASES.QUESTION_CLOSED
@@ -1681,81 +1682,78 @@ function App() {
                   className="selection-counter"
                   style={{
                     fontSize: '15px',
-                    marginBottom: '10px',
+                    marginBottom: '12px',
                     textAlign: 'center',
                   }}
                 >
                   Select exactly 5 answers — <strong>{selectedOptionIds.length} / 5 selected</strong>
                 </div>
 
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div
-                    className="answers-grid"
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: '8px',
-                      marginBottom: '12px',
-                    }}
-                  >
-                    {loadedPlayerOptions.map((option) => {
-                      const isSelected = selectedOptionIds.includes(option.id)
+                <button
+                  onClick={submitAnswers}
+                  disabled={
+                    isSubmitting ||
+                    loadedPlayerQuestion.status !== 'open' ||
+                    selectedOptionIds.length !== 5
+                  }
+                  className="primary-button full-width"
+                  style={{
+                    paddingTop: '14px',
+                    paddingBottom: '14px',
+                    fontSize: '18px',
+                    fontWeight: 700,
+                    marginBottom: '16px',
+                  }}
+                >
+                  {isSubmitting ? 'Submitting...' : 'Submit Answers'}
+                </button>
 
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => togglePlayerOption(option.id)}
-                          disabled={
-                            isSubmitting ||
-                            loadedPlayerQuestion.status !== 'open' ||
-                            (!isSelected && selectedOptionIds.length >= 5)
-                          }
-                          className={[
-                            'answer-tile',
-                            isSelected ? 'answer-tile-selected' : '',
-                          ].join(' ').trim()}
-                          style={{
-                            padding: '10px 12px',
-                            minHeight: '52px',
-                            fontSize: '14px',
-                            ...(isSelected
-                              ? {
-                                  borderColor: 'rgba(255, 62, 168, 0.95)',
-                                  background:
-                                    'linear-gradient(135deg, rgba(255, 62, 168, 0.18), rgba(66, 198, 255, 0.18)), #f8fafc',
-                                  boxShadow:
-                                    '0 0 0 4px rgba(255, 62, 168, 0.2), 0 0 16px rgba(255, 62, 168, 0.28), 0 0 18px rgba(66, 198, 255, 0.22)',
-                                  transform: 'scale(1.02)',
-                                }
-                              : {}),
-                          }}
-                        >
-                          <span className="answer-number">{option.option_number}</span>
-                          <span className="answer-text">{option.text}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
+                <div
+                  className="answers-grid"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '8px',
+                  }}
+                >
+                  {loadedPlayerOptions.map((option) => {
+                    const isSelected = selectedOptionIds.includes(option.id)
 
-                  <button
-                    onClick={submitAnswers}
-                    disabled={
-                      isSubmitting ||
-                      loadedPlayerQuestion.status !== 'open' ||
-                      selectedOptionIds.length !== 5
-                    }
-                    className="primary-button full-width"
-                    style={{
-                      paddingTop: '14px',
-                      paddingBottom: '14px',
-                      fontSize: '18px',
-                      fontWeight: 700,
-                      marginTop: 'auto',
-                    }}
-                  >
-                    {isSubmitting ? 'Submitting...' : 'Submit Answers'}
-                  </button>
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => togglePlayerOption(option.id)}
+                        disabled={
+                          isSubmitting ||
+                          loadedPlayerQuestion.status !== 'open' ||
+                          (!isSelected && selectedOptionIds.length >= 5)
+                        }
+                        className={[
+                          'answer-tile',
+                          isSelected ? 'answer-tile-selected' : '',
+                        ].join(' ').trim()}
+                        style={{
+                          padding: '10px 12px',
+                          minHeight: '52px',
+                          fontSize: '14px',
+                          ...(isSelected
+                            ? {
+                                borderColor: 'rgba(255, 62, 168, 0.95)',
+                                background:
+                                  'linear-gradient(135deg, rgba(255, 62, 168, 0.18), rgba(66, 198, 255, 0.18)), #f8fafc',
+                                boxShadow:
+                                  '0 0 0 4px rgba(255, 62, 168, 0.2), 0 0 16px rgba(255, 62, 168, 0.28), 0 0 18px rgba(66, 198, 255, 0.22)',
+                                transform: 'scale(1.02)',
+                              }
+                            : {}),
+                        }}
+                      >
+                        <span className="answer-number">{option.option_number}</span>
+                        <span className="answer-text">{option.text}</span>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             </div>
