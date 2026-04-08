@@ -1258,6 +1258,25 @@ function App() {
     letterSpacing: '0.02em',
   }
 
+  const leaderboardCount = Math.max(screenLeaderboardPlayers.length, 1)
+  const leaderboardNameSize =
+    leaderboardCount <= 6
+      ? 'clamp(42px, 3.2vw, 66px)'
+      : leaderboardCount <= 10
+      ? 'clamp(32px, 2.5vw, 52px)'
+      : 'clamp(24px, 2vw, 40px)'
+  const leaderboardScoreSize =
+    leaderboardCount <= 6
+      ? 'clamp(42px, 3.2vw, 66px)'
+      : leaderboardCount <= 10
+      ? 'clamp(32px, 2.5vw, 52px)'
+      : 'clamp(24px, 2vw, 40px)'
+  const leaderboardRowPadding =
+    leaderboardCount <= 6 ? '28px 30px' : leaderboardCount <= 10 ? '20px 24px' : '14px 20px'
+  const leaderboardRowMinHeight =
+    leaderboardCount <= 6 ? '120px' : leaderboardCount <= 10 ? '88px' : '64px'
+  const leaderboardGap = leaderboardCount <= 6 ? '18px' : leaderboardCount <= 10 ? '12px' : '8px'
+
   return (
     <div className={`app-shell ${viewMode === 'screen' ? 'screen-shell' : ''}`}>
       {viewMode !== 'screen' && (
@@ -2505,7 +2524,7 @@ function App() {
                 style={{
                   display: 'grid',
                   alignContent: 'center',
-                  gap: '18px',
+                  gap: leaderboardGap,
                   minHeight: '100%',
                 }}
               >
@@ -2529,8 +2548,8 @@ function App() {
                         gridTemplateColumns: 'minmax(0, 1fr) auto',
                         alignItems: 'center',
                         gap: '28px',
-                        padding: '28px 30px',
-                        minHeight: '120px',
+                        padding: leaderboardRowPadding,
+                        minHeight: leaderboardRowMinHeight,
                         borderRadius: '28px',
                         background:
                           'linear-gradient(135deg, rgba(255,62,168,0.07), rgba(66,198,255,0.08)), rgba(255,255,255,0.06)',
@@ -2540,7 +2559,7 @@ function App() {
                     >
                       <div
                         style={{
-                          fontSize: 'clamp(42px, 3.2vw, 66px)',
+                          fontSize: leaderboardNameSize,
                           fontWeight: 800,
                           lineHeight: 1.04,
                           color: '#fff',
@@ -2551,7 +2570,7 @@ function App() {
 
                       <div
                         style={{
-                          fontSize: 'clamp(42px, 3.2vw, 66px)',
+                          fontSize: leaderboardScoreSize,
                           fontWeight: 900,
                           lineHeight: 1.04,
                           color: '#fff',
