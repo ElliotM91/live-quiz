@@ -393,6 +393,7 @@ function App() {
     }
 
     setCreatedGame(data)
+    localStorage.setItem('hostGameCode', data.join_code)
     setPlayersInGame([])
     setPlayerListMessage('Game created successfully.')
     setStatusMessage('Game created successfully.')
@@ -824,6 +825,7 @@ function App() {
     }
 
     setCreatedGame(data)
+    localStorage.setItem('hostGameCode', data.join_code)
     setCurrentQuestion(null)
     setCurrentQuestionOptions([])
     setQuestionPrompt('')
@@ -1157,9 +1159,20 @@ function App() {
         if (code) {
           const game = await loadGameByJoinCode(code)
           if (game) {
+            localStorage.setItem('hostGameCode', game.join_code)
             await loadCurrentQuestionForGame(game.id, game.current_question_number, false)
             await loadPlayersForCreatedGame(false)
             await loadLeaderboard(false)
+          }
+        } else {
+          const savedCode = localStorage.getItem('hostGameCode')
+          if (savedCode) {
+            const game = await loadGameByJoinCode(savedCode)
+            if (game) {
+              await loadCurrentQuestionForGame(game.id, game.current_question_number, false)
+              await loadPlayersForCreatedGame(false)
+              await loadLeaderboard(false)
+            }
           }
         }
       } else if (mode === 'screen' && key === SCREEN_KEY) {
@@ -2573,7 +2586,8 @@ function App() {
                           fontSize: leaderboardScoreSize,
                           fontWeight: 900,
                           lineHeight: 1.04,
-                          color: '#fff',
+                          color: '#FFD700',
+                          textShadow: '0 0 12px rgba(255,215,0,0.6)',
                         }}
                       >
                         {formatMoney(player.total_score)}
