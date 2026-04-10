@@ -6,6 +6,10 @@ const HOST_KEY = 'host123'
 const SCREEN_KEY = 'screen123'
 const HOLDING_LOGO_URL = '/prize-fight-logo.png'
 
+const TOTAL_CATEGORIES = 4
+const QUESTIONS_PER_CATEGORY = 8
+const TOTAL_QUESTIONS = TOTAL_CATEGORIES * QUESTIONS_PER_CATEGORY
+
 const GAME_PHASES = {
   LOBBY: 'lobby',
   HOLDING: 'holding',
@@ -26,27 +30,15 @@ function makeJoinCode() {
 }
 
 function createEmptyOptions() {
-  return Array.from({ length: 10 }, (_, index) => ({
+  return Array.from({ length: 2 }, (_, index) => ({
     option_number: index + 1,
     text: '',
     is_correct: false,
   }))
 }
 
-function scoreFromCorrectCount(correctCount) {
-  const scoreMap = {
-    0: 100,
-    1: 500,
-    2: 1000,
-    3: 2500,
-    4: 5000,
-    5: 10000,
-  }
-  return scoreMap[correctCount] ?? 0
-}
-
-function formatMoney(value) {
-  return `£${Number(value || 0).toLocaleString('en-GB')}`
+function formatScore(value) {
+  return `${Number(value || 0)}`
 }
 
 function sortLeaderboard(players) {
@@ -103,13 +95,13 @@ function getPhaseDescription(phase) {
     case GAME_PHASES.HOLDING:
       return 'Show logo / holding screen on the big display.'
     case GAME_PHASES.QUESTION_READY:
-      return 'Question saved and ready for the host to open.'
+      return 'Full category is loaded and ready for the host to open.'
     case GAME_PHASES.QUESTION_OPEN:
       return 'Players can currently answer on their phones.'
     case GAME_PHASES.QUESTION_CLOSED:
       return 'Answers are locked. Waiting for reveal.'
     case GAME_PHASES.ANSWER_REVEAL:
-      return 'Correct answers are being shown on the big screen.'
+      return 'Correct answer is being shown on the big screen.'
     case GAME_PHASES.LEADERBOARD:
       return 'Leaderboard is showing on the big screen.'
     default:
@@ -120,7 +112,7 @@ function getPhaseDescription(phase) {
 function getNextActionLabel(phase) {
   switch (phase) {
     case GAME_PHASES.LOBBY:
-      return 'Load a template or write a question.'
+      return 'Load the full category or return to the screen when ready.'
     case GAME_PHASES.HOLDING:
       return 'Return to join, question or leaderboard when ready.'
     case GAME_PHASES.QUESTION_READY:
@@ -128,7 +120,7 @@ function getNextActionLabel(phase) {
     case GAME_PHASES.QUESTION_OPEN:
       return 'Monitor submissions, then close the question.'
     case GAME_PHASES.QUESTION_CLOSED:
-      return 'Reveal the correct answers.'
+      return 'Reveal the correct answer.'
     case GAME_PHASES.ANSWER_REVEAL:
       return 'Show the leaderboard or move to the next question.'
     case GAME_PHASES.LEADERBOARD:
@@ -151,6 +143,119 @@ function mapOptionsToFullSet(options) {
     }
   })
   return base
+}
+
+function getCategoryNumber(questionNumber) {
+  return Math.min(
+    TOTAL_CATEGORIES,
+    Math.max(1, Math.floor(((questionNumber || 1) - 1) / QUESTIONS_PER_CATEGORY) + 1)
+  )
+}
+
+function getQuestionNumberInCategory(questionNumber) {
+  return (((questionNumber || 1) - 1) % QUESTIONS_PER_CATEGORY) + 1
+}
+
+function getCategoryStartQuestion(questionNumber) {
+  const categoryNumber = getCategoryNumber(questionNumber)
+  return (categoryNumber - 1) * QUESTIONS_PER_CATEGORY + 1
+}
+
+function getCategoryEndQuestion(questionNumber) {
+  return getCategoryStartQuestion(questionNumber) + QUESTIONS_PER_CATEGORY - 1
+}
+
+function getCategoryStartQuestionFromCategory(categoryNumber) {
+  return (categoryNumber - 1) * QUESTIONS_PER_CATEGORY + 1
+}
+
+function getCategoryEndQuestionFromCategory(categoryNumber) {
+  return getCategoryStartQuestionFromCategory(categoryNumber) + QUESTIONS_PER_CATEGORY - 1
+}
+
+function isFirstQuestionOfCategory(questionNumber) {
+  return getQuestionNumberInCategory(questionNumber) === 1
+}
+
+function getCategoryLabel(questionNumber) {
+  return `Category ${getCategoryNumber(questionNumber)}`
+}
+
+function getCategoryLabelFromCategory(categoryNumber) {
+  return `Category ${categoryNumber}`
+}
+
+function getRoundProgressLabel(questionNumber) {
+  return `${getCategoryLabel(questionNumber)} · Question ${getQuestionNumberInCategory(questionNumber)} of ${QUESTIONS_PER_CATEGORY}`
+}
+
+function buildScreenLeaderboardCards(players, wrongOutSummaries) {
+  const sorted = sortLeaderboard(players || [])
+  if (!sorted.length) return []
+
+  const usedIds = new Set()
+
+  const secondBest = sorted[1] || sorted[0] || null
+  if (secondBest) usedIds.add(secondBest.id)
+
+  const averageScore =
+    sorted.reduce((sum, player) => sum + (player.total_score || 0), 0) / Math.max(sorted.length, 1)
+  const averageTime =
+    sorted.reduce((sum, player) => sum + (player.total_time_ms || 0), 0) / Math.max(sorted.length, 1)
+
+  const averageCandidates = sorted.filter((player) => !usedIds.has(player.id))
+  const averagePlayer =
+    [...averageCandidates].sort((a, b) => {
+      const scoreGapA = Math.abs((a.total_score || 0) - averageScore)
+      const scoreGapB = Math.abs((b.total_score || 0) - averageScore)
+      if (scoreGapA !== scoreGapB) return scoreGapA - scoreGapB
+
+      const timeGapA = Math.abs((a.total_time_ms || 0) - averageTime)
+      const timeGapB = Math.abs((b.total_time_ms || 0) - averageTime)
+      if (timeGapA !== timeGapB) return timeGapA - timeGapB
+
+      return (a.total_time_ms || 0) - (b.total_time_ms || 0)
+    })[0] || null
+
+  if (averagePlayer) usedIds.add(averagePlayer.id)
+
+  const wrongOutSorted = [...(wrongOutSummaries || [])].sort((a, b) => {
+    if ((a.wrong_question_number || 999) !== (b.wrong_question_number || 999)) {
+      return (a.wrong_question_number || 999) - (b.wrong_question_number || 999)
+    }
+    return (a.response_time_ms || 0) - (b.response_time_ms || 0)
+  })
+
+  let worstPlayer = null
+  for (const summary of wrongOutSorted) {
+    const player = sorted.find((entry) => entry.id === summary.player_id)
+    if (player && !usedIds.has(player.id)) {
+      worstPlayer = player
+      break
+    }
+  }
+
+  if (!worstPlayer) {
+    worstPlayer = [...sorted].reverse().find((player) => !usedIds.has(player.id)) || null
+  }
+
+  const cards = [
+    { slot: '2nd Best', player: secondBest },
+    { slot: 'Average', player: averagePlayer },
+    { slot: 'First Out', player: worstPlayer },
+  ]
+
+  const uniqueCards = []
+  const seen = new Set()
+
+  cards.forEach((card) => {
+    if (!card.player) return
+    if (seen.has(card.player.id)) return
+    seen.add(card.player.id)
+    uniqueCards.push(card)
+  })
+
+  return uniqueCards
 }
 
 function App() {
@@ -194,8 +299,12 @@ function App() {
   const [submissionCountMessage, setSubmissionCountMessage] = useState('')
 
   const [templates, setTemplates] = useState([])
-  const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [templateMessage, setTemplateMessage] = useState('')
+  const [wrongOutSummaries, setWrongOutSummaries] = useState([])
+  const [selectedCategoryNumber, setSelectedCategoryNumber] = useState('1')
+
+  const [playerLockedOut, setPlayerLockedOut] = useState(false)
+  const [playerSetScore, setPlayerSetScore] = useState(0)
 
   const gamePhase = useMemo(
     () => resolveGamePhase(createdGame?.status, currentQuestion?.status),
@@ -222,24 +331,19 @@ function App() {
   const canRevealAnswers = !!createdGame && !!currentQuestion && currentQuestion.status === 'closed'
   const canShowQuestionOnScreen = !!createdGame && !!currentQuestion
   const canShowLeaderboard = !!createdGame
-  const canGoNext = !!createdGame
+  const canGoNext = !!createdGame && (createdGame.current_question_number || 1) < TOTAL_QUESTIONS
 
   const playerQuestionIsOpen = loadedPlayerQuestion?.status === 'open'
   const playerQuestionIsRevealed = loadedPlayerQuestion?.status === 'revealed'
   const playerWaitingAfterSubmit = !!submittedResult && !playerQuestionIsRevealed
-  const playerShowLiveQuestion = !!joinedPlayer && playerQuestionIsOpen && !submittedResult
+  const playerShowLiveQuestion =
+    !!joinedPlayer && playerQuestionIsOpen && !submittedResult && !playerLockedOut
 
-  const hostLeaderboardPlayers = useMemo(
-    () =>
-      sortLeaderboard(leaderboard).filter(
-        (player) => (player.total_score || 0) > 0 || (player.total_time_ms || 0) > 0
-      ),
-    [leaderboard]
-  )
+  const hostLeaderboardPlayers = useMemo(() => sortLeaderboard(leaderboard), [leaderboard])
 
-  const screenLeaderboardPlayers = useMemo(
-    () => hostLeaderboardPlayers.slice(1),
-    [hostLeaderboardPlayers]
+  const screenLeaderboardCards = useMemo(
+    () => buildScreenLeaderboardCards(leaderboard, wrongOutSummaries),
+    [leaderboard, wrongOutSummaries]
   )
 
   const playerRevealOptions = useMemo(
@@ -365,7 +469,283 @@ function App() {
 
     setCurrentQuestion(question)
     setCurrentQuestionOptions(options || [])
+    setQuestionPrompt(question.prompt || '')
+    setAnswerOptions(mapOptionsToFullSet(options || []))
     return question
+  }
+
+  async function getPlayerProgressForCurrentCategory(gameId, playerId, questionNumber) {
+    if (!gameId || !playerId || !questionNumber) {
+      return {
+        lockedOut: false,
+        setScore: 0,
+        submissions: [],
+      }
+    }
+
+    const startQuestion = getCategoryStartQuestion(questionNumber)
+    const endQuestion = getCategoryEndQuestion(questionNumber)
+
+    const { data: setQuestions, error: setQuestionsError } = await supabase
+      .from('questions')
+      .select('id, question_number')
+      .eq('game_id', gameId)
+      .gte('question_number', startQuestion)
+      .lte('question_number', endQuestion)
+
+    if (setQuestionsError || !setQuestions) {
+      return {
+        lockedOut: false,
+        setScore: 0,
+        submissions: [],
+      }
+    }
+
+    const questionIds = setQuestions.map((question) => question.id)
+
+    if (!questionIds.length) {
+      return {
+        lockedOut: false,
+        setScore: 0,
+        submissions: [],
+      }
+    }
+
+    const { data: setSubmissions, error: setSubmissionsError } = await supabase
+      .from('submissions')
+      .select('*')
+      .eq('player_id', playerId)
+      .in('question_id', questionIds)
+
+    if (setSubmissionsError || !setSubmissions) {
+      return {
+        lockedOut: false,
+        setScore: 0,
+        submissions: [],
+      }
+    }
+
+    const lockedOut = setSubmissions.some((submission) => (submission.correct_count || 0) === 0)
+    const setScore = setSubmissions.filter((submission) => (submission.correct_count || 0) > 0).length
+
+    return {
+      lockedOut,
+      setScore,
+      submissions: setSubmissions,
+    }
+  }
+
+  async function loadCategoryTemplates(categoryNumber, showMessage = true) {
+    if (!createdGame) {
+      setTemplateMessage('Create a game first.')
+      return
+    }
+
+    const startQuestion = getCategoryStartQuestionFromCategory(categoryNumber)
+    const endQuestion = getCategoryEndQuestionFromCategory(categoryNumber)
+    const categoryLabel = getCategoryLabelFromCategory(categoryNumber)
+
+    setTemplateMessage(`Loading all 8 questions for ${categoryLabel}...`)
+
+    const { data: allTemplates, error: templatesError } = await supabase
+      .from('question_templates')
+      .select('*')
+      .order('id', { ascending: true })
+
+    if (templatesError || !allTemplates) {
+      setTemplateMessage(`Could not load templates: ${templatesError?.message || 'Unknown error'}`)
+      return
+    }
+
+    let categoryTemplates = allTemplates.filter((template) =>
+      String(template.title || '').toLowerCase().startsWith(`category ${categoryNumber} -`.toLowerCase())
+    )
+
+    if (categoryTemplates.length !== QUESTIONS_PER_CATEGORY) {
+      const sliceStart = (categoryNumber - 1) * QUESTIONS_PER_CATEGORY
+      categoryTemplates = allTemplates.slice(sliceStart, sliceStart + QUESTIONS_PER_CATEGORY)
+    }
+
+    if (categoryTemplates.length !== QUESTIONS_PER_CATEGORY) {
+      setTemplateMessage(`Could not find ${QUESTIONS_PER_CATEGORY} templates for ${categoryLabel}.`)
+      return
+    }
+
+    const templateIds = categoryTemplates.map((template) => template.id)
+
+    const { data: templateOptions, error: templateOptionsError } = await supabase
+      .from('question_template_options')
+      .select('*')
+      .in('template_id', templateIds)
+      .order('template_id', { ascending: true })
+      .order('option_number', { ascending: true })
+
+    if (templateOptionsError) {
+      setTemplateMessage(`Templates loaded, but options failed: ${templateOptionsError.message}`)
+      return
+    }
+
+    const { data: existingQuestions, error: existingQuestionsError } = await supabase
+      .from('questions')
+      .select('*')
+      .eq('game_id', createdGame.id)
+      .gte('question_number', startQuestion)
+      .lte('question_number', endQuestion)
+      .order('id', { ascending: true })
+
+    if (existingQuestionsError) {
+      setTemplateMessage(`Could not inspect existing questions: ${existingQuestionsError.message}`)
+      return
+    }
+
+    const existingMap = {}
+    ;(existingQuestions || []).forEach((question) => {
+      existingMap[question.question_number] = question
+    })
+
+    for (let index = 0; index < categoryTemplates.length; index++) {
+      const template = categoryTemplates[index]
+      const questionNumber = startQuestion + index
+      const optionsForTemplate = (templateOptions || []).filter((option) => option.template_id === template.id)
+
+      if (optionsForTemplate.length !== 2) {
+        setTemplateMessage(`Template "${template.title}" does not have exactly 2 answer options.`)
+        return
+      }
+
+      let questionRecord = existingMap[questionNumber] || null
+
+      if (questionRecord) {
+        const { data: updatedQuestion, error: updateQuestionError } = await supabase
+          .from('questions')
+          .update({
+            prompt: template.prompt,
+            status: 'draft',
+            opened_at: null,
+            closed_at: null,
+          })
+          .eq('id', questionRecord.id)
+          .select()
+          .single()
+
+        if (updateQuestionError) {
+          setTemplateMessage(`Could not update question ${questionNumber}: ${updateQuestionError.message}`)
+          return
+        }
+
+        const { error: deleteOptionsError } = await supabase
+          .from('answer_options')
+          .delete()
+          .eq('question_id', questionRecord.id)
+
+        if (deleteOptionsError) {
+          setTemplateMessage(`Question ${questionNumber} updated, but old options could not be cleared: ${deleteOptionsError.message}`)
+          return
+        }
+
+        questionRecord = updatedQuestion
+      } else {
+        const { data: insertedQuestion, error: insertQuestionError } = await supabase
+          .from('questions')
+          .insert([
+            {
+              game_id: createdGame.id,
+              question_number: questionNumber,
+              prompt: template.prompt,
+              status: 'draft',
+            },
+          ])
+          .select()
+          .single()
+
+        if (insertQuestionError) {
+          setTemplateMessage(`Could not create question ${questionNumber}: ${insertQuestionError.message}`)
+          return
+        }
+
+        questionRecord = insertedQuestion
+      }
+
+      const optionRows = optionsForTemplate.map((option) => ({
+        question_id: questionRecord.id,
+        option_number: option.option_number,
+        text: option.text,
+        is_correct: option.is_correct,
+      }))
+
+      const { error: optionsInsertError } = await supabase
+        .from('answer_options')
+        .insert(optionRows)
+
+      if (optionsInsertError) {
+        setTemplateMessage(`Question ${questionNumber} saved, but options failed: ${optionsInsertError.message}`)
+        return
+      }
+    }
+
+    const isDifferentCategory = getCategoryNumber(createdGame.current_question_number) !== categoryNumber
+
+    const { data: updatedGame, error: gameUpdateError } = await supabase
+      .from('games')
+      .update({
+        current_question_number: startQuestion,
+        status: GAME_PHASES.QUESTION_READY,
+      })
+      .eq('id', createdGame.id)
+      .select()
+      .single()
+
+    if (gameUpdateError || !updatedGame) {
+      setTemplateMessage(`Questions loaded, but could not switch to ${categoryLabel}: ${gameUpdateError?.message || 'Unknown error'}`)
+      return
+    }
+
+    if (isDifferentCategory) {
+      const { error: resetPlayersError } = await supabase
+        .from('players')
+        .update({
+          total_score: 0,
+          total_time_ms: 0,
+        })
+        .eq('game_id', createdGame.id)
+
+      if (resetPlayersError) {
+        setTemplateMessage(`${categoryLabel} loaded, but player reset failed: ${resetPlayersError.message}`)
+        return
+      }
+
+      setLeaderboard([])
+      setWrongOutSummaries([])
+      setSubmissionCount(0)
+      setSubmissionCountMessage('')
+      if (joinedPlayer) {
+        setJoinedPlayer({
+          ...joinedPlayer,
+          total_score: 0,
+          total_time_ms: 0,
+        })
+      }
+      setPlayerLockedOut(false)
+      setPlayerSetScore(0)
+    }
+
+    setCreatedGame(updatedGame)
+    localStorage.setItem('hostGameCode', updatedGame.join_code)
+    setSelectedCategoryNumber(String(categoryNumber))
+    setSelectedOptionIds([])
+    setSubmissionMessage('')
+    setSubmittedResult(null)
+    setQuestionLoadedAt(null)
+
+    await loadCurrentQuestionForGame(updatedGame.id, startQuestion, false)
+    await loadLeaderboard(false)
+    setTemplateMessage(
+      showMessage
+        ? `${categoryLabel} loaded. All ${QUESTIONS_PER_CATEGORY} questions are ready.`
+        : 'Category loaded.'
+    )
+    setQuestionMessage('Full category loaded. You can now move through the set quickly.')
+    setPlayerQuestionMessage(`${categoryLabel} is ready.`)
   }
 
   async function createGame() {
@@ -393,6 +773,7 @@ function App() {
     }
 
     setCreatedGame(data)
+    setSelectedCategoryNumber(String(getCategoryNumber(data.current_question_number)))
     localStorage.setItem('hostGameCode', data.join_code)
     setPlayersInGame([])
     setPlayerListMessage('Game created successfully.')
@@ -413,6 +794,9 @@ function App() {
     setLeaderboardMessage('')
     setSubmissionCount(0)
     setSubmissionCountMessage('')
+    setWrongOutSummaries([])
+    setPlayerLockedOut(false)
+    setPlayerSetScore(0)
     setIsCreating(false)
   }
 
@@ -427,6 +811,8 @@ function App() {
     setSubmissionMessage('')
     setSubmittedResult(null)
     setQuestionLoadedAt(null)
+    setPlayerLockedOut(false)
+    setPlayerSetScore(0)
 
     const cleanCode = joinCodeInput.trim().toUpperCase()
     const cleanName = playerName.trim()
@@ -515,54 +901,24 @@ function App() {
     setTemplates(data || [])
 
     if (data && data.length > 0) {
-      setTemplateMessage(`Loaded ${data.length} template question(s).`)
-      if (!selectedTemplateId) {
-        setSelectedTemplateId(String(data[0].id))
-      }
+      const templateCountMessage =
+        data.length >= TOTAL_QUESTIONS
+          ? `Loaded ${data.length} template question(s).`
+          : `Loaded ${data.length} template question(s). Target is ${TOTAL_QUESTIONS}.`
+      setTemplateMessage(templateCountMessage)
     } else {
       setTemplateMessage('No template questions found.')
     }
   }
 
-  async function loadSelectedTemplate() {
-    if (!selectedTemplateId) {
-      setTemplateMessage('Choose a template first.')
-      return
-    }
-
-    const templateId = Number(selectedTemplateId)
-
-    const { data: template, error: templateError } = await supabase
-      .from('question_templates')
-      .select('*')
-      .eq('id', templateId)
-      .single()
-
-    if (templateError || !template) {
-      setTemplateMessage('Could not load selected template.')
-      return
-    }
-
-    const { data: options, error: optionsError } = await supabase
-      .from('question_template_options')
-      .select('*')
-      .eq('template_id', templateId)
-      .order('option_number', { ascending: true })
-
-    if (optionsError) {
-      setTemplateMessage(`Template loaded, but options failed: ${optionsError.message}`)
-      return
-    }
-
-    setQuestionPrompt(template.prompt)
-    setAnswerOptions(mapOptionsToFullSet(options || []))
-    setTemplateMessage(`Loaded template: ${template.title}`)
-    setQuestionMessage('Template loaded. Save when ready.')
-  }
-
   async function saveQuestion() {
     if (!createdGame) {
       setQuestionMessage('Create a game first.')
+      return
+    }
+
+    if (!currentQuestion) {
+      setQuestionMessage('Load the full category first.')
       return
     }
 
@@ -575,88 +931,55 @@ function App() {
       return
     }
 
-    if (hasEmptyOption) {
-      setQuestionMessage('Please fill in all 10 answer options.')
+    if (answerOptions.length !== 2) {
+      setQuestionMessage('Each question must have exactly 2 answer options.')
       return
     }
 
-    if (correctCount !== 5) {
-      setQuestionMessage('You must mark exactly 5 answers as correct.')
+    if (hasEmptyOption) {
+      setQuestionMessage('Please fill in both answer options.')
+      return
+    }
+
+    if (correctCount !== 1) {
+      setQuestionMessage('You must mark exactly 1 answer as correct.')
       return
     }
 
     setIsSavingQuestion(true)
     setQuestionMessage('Saving question...')
 
-    const currentRoundNumber = createdGame.current_question_number
-
-    const { data: existingQuestion } = await supabase
+    const { data: updatedQuestion, error: updateQuestionError } = await supabase
       .from('questions')
-      .select('*')
-      .eq('game_id', createdGame.id)
-      .eq('question_number', currentRoundNumber)
-      .order('id', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+      .update({
+        prompt: cleanPrompt,
+        status: 'draft',
+        opened_at: null,
+        closed_at: null,
+      })
+      .eq('id', currentQuestion.id)
+      .select()
+      .single()
 
-    let questionRecord = null
+    if (updateQuestionError) {
+      setQuestionMessage(`Could not update question: ${updateQuestionError.message}`)
+      setIsSavingQuestion(false)
+      return
+    }
 
-    if (existingQuestion) {
-      const { data: updatedQuestion, error: updateQuestionError } = await supabase
-        .from('questions')
-        .update({
-          prompt: cleanPrompt,
-          status: 'draft',
-          opened_at: null,
-          closed_at: null,
-        })
-        .eq('id', existingQuestion.id)
-        .select()
-        .single()
+    const { error: deleteOptionsError } = await supabase
+      .from('answer_options')
+      .delete()
+      .eq('question_id', currentQuestion.id)
 
-      if (updateQuestionError) {
-        setQuestionMessage(`Could not update question: ${updateQuestionError.message}`)
-        setIsSavingQuestion(false)
-        return
-      }
-
-      const { error: deleteOptionsError } = await supabase
-        .from('answer_options')
-        .delete()
-        .eq('question_id', existingQuestion.id)
-
-      if (deleteOptionsError) {
-        setQuestionMessage(`Question updated, but old options could not be cleared: ${deleteOptionsError.message}`)
-        setIsSavingQuestion(false)
-        return
-      }
-
-      questionRecord = updatedQuestion
-    } else {
-      const { data: insertedQuestion, error: insertQuestionError } = await supabase
-        .from('questions')
-        .insert([
-          {
-            game_id: createdGame.id,
-            question_number: currentRoundNumber,
-            prompt: cleanPrompt,
-            status: 'draft',
-          },
-        ])
-        .select()
-        .single()
-
-      if (insertQuestionError) {
-        setQuestionMessage(`Could not save question: ${insertQuestionError.message}`)
-        setIsSavingQuestion(false)
-        return
-      }
-
-      questionRecord = insertedQuestion
+    if (deleteOptionsError) {
+      setQuestionMessage(`Question updated, but old options could not be cleared: ${deleteOptionsError.message}`)
+      setIsSavingQuestion(false)
+      return
     }
 
     const optionRows = answerOptions.map((option) => ({
-      question_id: questionRecord.id,
+      question_id: updatedQuestion.id,
       option_number: option.option_number,
       text: option.text.trim(),
       is_correct: option.is_correct,
@@ -672,6 +995,7 @@ function App() {
       return
     }
 
+    setCurrentQuestion(updatedQuestion)
     await updateGameStatus(GAME_PHASES.QUESTION_READY, 'Question saved and ready.')
     await loadCurrentQuestionForGame(createdGame.id, createdGame.current_question_number, false)
     setIsSavingQuestion(false)
@@ -679,7 +1003,7 @@ function App() {
 
   async function openQuestion() {
     if (!currentQuestion) {
-      setQuestionMessage('Save a question first.')
+      setQuestionMessage('Load the full category first.')
       return
     }
 
@@ -708,7 +1032,7 @@ function App() {
 
   async function closeQuestion() {
     if (!currentQuestion) {
-      setQuestionMessage('Save a question first.')
+      setQuestionMessage('Load the full category first.')
       return
     }
 
@@ -734,7 +1058,7 @@ function App() {
 
   async function revealAnswers() {
     if (!currentQuestion) {
-      setQuestionMessage('Save a question first.')
+      setQuestionMessage('Load the full category first.')
       return
     }
 
@@ -794,13 +1118,19 @@ function App() {
       return
     }
 
-    const nextNumber = (createdGame.current_question_number || 1) + 1
+    const currentNumber = createdGame.current_question_number || 1
+    const nextNumber = currentNumber + 1
+
+    if (nextNumber > TOTAL_QUESTIONS) {
+      setQuestionMessage(`This game currently supports ${TOTAL_QUESTIONS} questions total.`)
+      return
+    }
 
     const { data, error } = await supabase
       .from('games')
       .update({
         current_question_number: nextNumber,
-        status: GAME_PHASES.LOBBY,
+        status: GAME_PHASES.QUESTION_READY,
       })
       .eq('id', createdGame.id)
       .select()
@@ -811,34 +1141,31 @@ function App() {
       return
     }
 
-    const { error: resetPlayersError } = await supabase
-      .from('players')
-      .update({
-        total_score: 0,
-        total_time_ms: 0,
-      })
-      .eq('game_id', createdGame.id)
+    const enteringNewCategory = isFirstQuestionOfCategory(nextNumber)
 
-    if (resetPlayersError) {
-      setQuestionMessage(`Moved to next question, but could not reset player scores: ${resetPlayersError.message}`)
-      return
+    if (enteringNewCategory) {
+      const { error: resetPlayersError } = await supabase
+        .from('players')
+        .update({
+          total_score: 0,
+          total_time_ms: 0,
+        })
+        .eq('game_id', createdGame.id)
+
+      if (resetPlayersError) {
+        setQuestionMessage(`Moved to next question, but could not reset player scores: ${resetPlayersError.message}`)
+        return
+      }
+
+      setWrongOutSummaries([])
     }
 
     setCreatedGame(data)
+    setSelectedCategoryNumber(String(getCategoryNumber(nextNumber)))
     localStorage.setItem('hostGameCode', data.join_code)
-    setCurrentQuestion(null)
-    setCurrentQuestionOptions([])
-    setQuestionPrompt('')
-    setAnswerOptions(createEmptyOptions())
-    setQuestionMessage(`Ready for question ${nextNumber}. Load a template to continue.`)
+
     setSubmissionCount(0)
     setSubmissionCountMessage('')
-    setLeaderboard([])
-    setLeaderboardMessage('')
-    setPlayersInGame([])
-    setLoadedPlayerQuestion(null)
-    setLoadedPlayerOptions([])
-    setPlayerQuestionMessage('Waiting for next question.')
     setSelectedOptionIds([])
     setSubmissionMessage('')
     setSubmittedResult(null)
@@ -847,10 +1174,36 @@ function App() {
     if (joinedPlayer) {
       setJoinedPlayer({
         ...joinedPlayer,
-        total_score: 0,
-        total_time_ms: 0,
+        total_score: enteringNewCategory ? 0 : joinedPlayer.total_score,
+        total_time_ms: enteringNewCategory ? 0 : joinedPlayer.total_time_ms,
       })
+      setPlayerLockedOut(false)
+      setPlayerSetScore(enteringNewCategory ? 0 : playerSetScore)
     }
+
+    const nextQuestion = await loadCurrentQuestionForGame(data.id, nextNumber, false)
+
+    if (nextQuestion) {
+      setQuestionMessage(
+        enteringNewCategory
+          ? `${getCategoryLabel(nextNumber)} started. Current question loaded.`
+          : `Moved to question ${getQuestionNumberInCategory(nextNumber)} of ${QUESTIONS_PER_CATEGORY}.`
+      )
+    } else {
+      setCurrentQuestion(null)
+      setCurrentQuestionOptions([])
+      setQuestionPrompt('')
+      setAnswerOptions(createEmptyOptions())
+      setQuestionMessage(
+        enteringNewCategory
+          ? `${getCategoryLabel(nextNumber)} started. Load the full category to continue.`
+          : `No saved question found for question ${nextNumber}.`
+      )
+    }
+
+    setPlayerQuestionMessage(
+      enteringNewCategory ? `${getCategoryLabel(nextNumber)} is starting.` : 'Waiting for next question.'
+    )
   }
 
   async function loadQuestionForPlayer(showMessage = true) {
@@ -861,12 +1214,34 @@ function App() {
 
     const existingQuestionId = loadedPlayerQuestion?.id || null
 
+    const { data: game } = await supabase
+      .from('games')
+      .select('*')
+      .eq('id', joinedPlayer.game_id)
+      .single()
+
+    if (!game) {
+      if (showMessage) setPlayerQuestionMessage('Could not load game state.')
+      return
+    }
+
+    const currentRoundNumber = game.current_question_number || 1
+
+    const progress = await getPlayerProgressForCurrentCategory(
+      joinedPlayer.game_id,
+      joinedPlayer.id,
+      currentRoundNumber
+    )
+
+    setPlayerLockedOut(progress.lockedOut)
+    setPlayerSetScore(progress.setScore)
+
     const { data: question, error: questionError } = await supabase
       .from('questions')
       .select('*')
       .eq('game_id', joinedPlayer.game_id)
+      .eq('question_number', currentRoundNumber)
       .in('status', ['open', 'closed', 'revealed'])
-      .order('question_number', { ascending: false })
       .order('id', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -917,19 +1292,23 @@ function App() {
       setSubmittedResult(null)
     }
 
-    if (isNewQuestion && question.status === 'open' && !existingSubmission) {
+    if (isNewQuestion && question.status === 'open' && !existingSubmission && !progress.lockedOut) {
       setQuestionLoadedAt(Date.now())
     }
 
     if (showMessage) {
       if (question.status === 'revealed') {
-        setPlayerQuestionMessage('Answers have been revealed.')
+        setPlayerQuestionMessage('Answer has been revealed.')
       } else if (existingSubmission) {
-        setPlayerQuestionMessage('Answers submitted.')
+        setPlayerQuestionMessage('Answer submitted.')
       } else if (question.status === 'closed') {
         setPlayerQuestionMessage('Question is closed.')
+      } else if (progress.lockedOut) {
+        setPlayerQuestionMessage(
+          `You got one wrong in ${getCategoryLabel(question.question_number)} and are locked out for the rest of this category.`
+        )
       } else {
-        setPlayerQuestionMessage('Question is live. Pick exactly 5 answers.')
+        setPlayerQuestionMessage('Question is live. Pick 1 answer.')
       }
     }
   }
@@ -937,17 +1316,14 @@ function App() {
   function togglePlayerOption(optionId) {
     if (submittedResult) return
     if (!loadedPlayerQuestion || loadedPlayerQuestion.status !== 'open') return
+    if (playerLockedOut) return
 
     if (selectedOptionIds.includes(optionId)) {
-      setSelectedOptionIds(selectedOptionIds.filter((id) => id !== optionId))
+      setSelectedOptionIds([])
       return
     }
 
-    if (selectedOptionIds.length >= 5) {
-      return
-    }
-
-    setSelectedOptionIds([...selectedOptionIds, optionId])
+    setSelectedOptionIds([optionId])
   }
 
   async function submitAnswers() {
@@ -966,8 +1342,13 @@ function App() {
       return
     }
 
-    if (selectedOptionIds.length !== 5) {
-      setSubmissionMessage('You must select exactly 5 answers.')
+    if (playerLockedOut) {
+      setSubmissionMessage('You are locked out for the rest of this category.')
+      return
+    }
+
+    if (selectedOptionIds.length !== 1) {
+      setSubmissionMessage('You must select exactly 1 answer.')
       return
     }
 
@@ -977,7 +1358,7 @@ function App() {
     }
 
     setIsSubmitting(true)
-    setSubmissionMessage('Submitting answers...')
+    setSubmissionMessage('Submitting answer...')
 
     const { data: alreadySubmitted } = await supabase
       .from('submissions')
@@ -990,6 +1371,19 @@ function App() {
       setSubmittedResult(alreadySubmitted)
       setSelectedOptionIds(alreadySubmitted.selected_option_ids || [])
       setSubmissionMessage('You have already submitted for this question.')
+      setIsSubmitting(false)
+      return
+    }
+
+    const progressBefore = await getPlayerProgressForCurrentCategory(
+      joinedPlayer.game_id,
+      joinedPlayer.id,
+      loadedPlayerQuestion.question_number
+    )
+
+    if (progressBefore.lockedOut) {
+      setPlayerLockedOut(true)
+      setSubmissionMessage('You are locked out for the rest of this category.')
       setIsSubmitting(false)
       return
     }
@@ -1018,7 +1412,6 @@ function App() {
       .map((option) => option.id)
 
     const correctCount = selectedOptionIds.filter((id) => correctIds.includes(id)).length
-    const moneyScore = scoreFromCorrectCount(correctCount)
     const responseTimeMs = Math.max(0, Date.now() - questionLoadedAt)
 
     const { data: submission, error: submissionError } = await supabase
@@ -1036,34 +1429,117 @@ function App() {
       .single()
 
     if (submissionError) {
-      setSubmissionMessage(`Could not submit answers: ${submissionError.message}`)
+      setSubmissionMessage(`Could not submit answer: ${submissionError.message}`)
       setIsSubmitting(false)
       return
     }
 
+    const nextSetScore = progressBefore.setScore + (correctCount > 0 ? 1 : 0)
+    const nextTotalTimeMs = (joinedPlayer.total_time_ms || 0) + responseTimeMs
+
     const { error: playerUpdateError } = await supabase
       .from('players')
       .update({
-        total_score: moneyScore,
-        total_time_ms: responseTimeMs,
+        total_score: nextSetScore,
+        total_time_ms: nextTotalTimeMs,
       })
       .eq('id', joinedPlayer.id)
 
     if (playerUpdateError) {
-      setSubmissionMessage(`Answers saved, but player score update failed: ${playerUpdateError.message}`)
+      setSubmissionMessage(`Answer saved, but player score update failed: ${playerUpdateError.message}`)
       setIsSubmitting(false)
       return
     }
 
     setJoinedPlayer({
       ...joinedPlayer,
-      total_score: moneyScore,
-      total_time_ms: responseTimeMs,
+      total_score: nextSetScore,
+      total_time_ms: nextTotalTimeMs,
     })
 
+    const isNowLockedOut = correctCount === 0
+
+    setPlayerSetScore(nextSetScore)
+    setPlayerLockedOut(isNowLockedOut)
     setSubmittedResult(submission)
-    setSubmissionMessage('Answers submitted. Waiting for reveal.')
+    setSubmissionMessage(
+      isNowLockedOut
+        ? `Wrong answer. Your run in ${getCategoryLabel(loadedPlayerQuestion.question_number)} is over.`
+        : 'Answer submitted. Waiting for reveal.'
+    )
     setIsSubmitting(false)
+  }
+
+  async function loadWrongOutSummaries(gameId, questionNumber) {
+    if (!gameId || !questionNumber) {
+      setWrongOutSummaries([])
+      return []
+    }
+
+    const startQuestion = getCategoryStartQuestion(questionNumber)
+    const endQuestion = getCategoryEndQuestion(questionNumber)
+
+    const { data: categoryQuestions, error: categoryQuestionsError } = await supabase
+      .from('questions')
+      .select('id, question_number')
+      .eq('game_id', gameId)
+      .gte('question_number', startQuestion)
+      .lte('question_number', endQuestion)
+
+    if (categoryQuestionsError || !categoryQuestions) {
+      setWrongOutSummaries([])
+      return []
+    }
+
+    const questionMap = {}
+    categoryQuestions.forEach((question) => {
+      questionMap[question.id] = question.question_number
+    })
+
+    const questionIds = categoryQuestions.map((question) => question.id)
+    if (!questionIds.length) {
+      setWrongOutSummaries([])
+      return []
+    }
+
+    const { data: wrongSubs, error: wrongSubsError } = await supabase
+      .from('submissions')
+      .select('*')
+      .in('question_id', questionIds)
+      .eq('correct_count', 0)
+
+    if (wrongSubsError || !wrongSubs) {
+      setWrongOutSummaries([])
+      return []
+    }
+
+    const grouped = {}
+    wrongSubs.forEach((submission) => {
+      const summary = {
+        player_id: submission.player_id,
+        wrong_question_number: questionMap[submission.question_id] || 999,
+        response_time_ms: submission.response_time_ms || 0,
+      }
+
+      if (!grouped[submission.player_id]) {
+        grouped[submission.player_id] = summary
+        return
+      }
+
+      const existing = grouped[submission.player_id]
+      if (summary.wrong_question_number < existing.wrong_question_number) {
+        grouped[submission.player_id] = summary
+      } else if (
+        summary.wrong_question_number === existing.wrong_question_number &&
+        summary.response_time_ms < existing.response_time_ms
+      ) {
+        grouped[submission.player_id] = summary
+      }
+    })
+
+    const summaries = Object.values(grouped)
+    setWrongOutSummaries(summaries)
+    return summaries
   }
 
   async function loadLeaderboard(showMessage = true) {
@@ -1084,6 +1560,7 @@ function App() {
 
     const sorted = sortLeaderboard(data || [])
     setLeaderboard(sorted)
+    await loadWrongOutSummaries(createdGame.id, createdGame.current_question_number)
 
     if (showMessage) {
       if (!sorted.length) {
@@ -1133,6 +1610,8 @@ function App() {
     const freshGame = await refreshGame(createdGame.id, false)
     const gameToUse = freshGame || createdGame
 
+    setSelectedCategoryNumber(String(getCategoryNumber(gameToUse.current_question_number)))
+
     await loadCurrentQuestionForGame(gameToUse.id, gameToUse.current_question_number, false)
     await loadPlayersForCreatedGame(false)
     await loadLeaderboard(false)
@@ -1159,6 +1638,7 @@ function App() {
         if (code) {
           const game = await loadGameByJoinCode(code)
           if (game) {
+            setSelectedCategoryNumber(String(getCategoryNumber(game.current_question_number)))
             localStorage.setItem('hostGameCode', game.join_code)
             await loadCurrentQuestionForGame(game.id, game.current_question_number, false)
             await loadPlayersForCreatedGame(false)
@@ -1169,6 +1649,7 @@ function App() {
           if (savedCode) {
             const game = await loadGameByJoinCode(savedCode)
             if (game) {
+              setSelectedCategoryNumber(String(getCategoryNumber(game.current_question_number)))
               await loadCurrentQuestionForGame(game.id, game.current_question_number, false)
               await loadPlayersForCreatedGame(false)
               await loadLeaderboard(false)
@@ -1182,6 +1663,7 @@ function App() {
         if (code) {
           const game = await loadGameByJoinCode(code)
           if (game) {
+            setSelectedCategoryNumber(String(getCategoryNumber(game.current_question_number)))
             await loadCurrentQuestionForGame(game.id, game.current_question_number, false)
             await loadPlayersForCreatedGame(false)
             await loadLeaderboard(false)
@@ -1271,24 +1753,22 @@ function App() {
     letterSpacing: '0.02em',
   }
 
-  const leaderboardCount = Math.max(screenLeaderboardPlayers.length, 1)
+  const leaderboardCount = Math.max(screenLeaderboardCards.length, 1)
   const leaderboardNameSize =
-    leaderboardCount <= 6
-      ? 'clamp(42px, 3.2vw, 66px)'
-      : leaderboardCount <= 10
-      ? 'clamp(32px, 2.5vw, 52px)'
+    leaderboardCount <= 3
+      ? 'clamp(44px, 3.1vw, 68px)'
+      : leaderboardCount <= 6
+      ? 'clamp(36px, 2.6vw, 56px)'
       : 'clamp(24px, 2vw, 40px)'
   const leaderboardScoreSize =
-    leaderboardCount <= 6
-      ? 'clamp(42px, 3.2vw, 66px)'
-      : leaderboardCount <= 10
-      ? 'clamp(32px, 2.5vw, 52px)'
+    leaderboardCount <= 3
+      ? 'clamp(44px, 3.1vw, 68px)'
+      : leaderboardCount <= 6
+      ? 'clamp(36px, 2.6vw, 56px)'
       : 'clamp(24px, 2vw, 40px)'
-  const leaderboardRowPadding =
-    leaderboardCount <= 6 ? '28px 30px' : leaderboardCount <= 10 ? '20px 24px' : '14px 20px'
-  const leaderboardRowMinHeight =
-    leaderboardCount <= 6 ? '120px' : leaderboardCount <= 10 ? '88px' : '64px'
-  const leaderboardGap = leaderboardCount <= 6 ? '18px' : leaderboardCount <= 10 ? '12px' : '8px'
+  const leaderboardRowPadding = leaderboardCount <= 3 ? '28px 30px' : '20px 24px'
+  const leaderboardRowMinHeight = leaderboardCount <= 3 ? '132px' : '88px'
+  const leaderboardGap = leaderboardCount <= 3 ? '18px' : '12px'
 
   return (
     <div className={`app-shell ${viewMode === 'screen' ? 'screen-shell' : ''}`}>
@@ -1303,22 +1783,13 @@ function App() {
           <div className="mode-switch">
             {accessLevel === 'host' && (
               <>
-                <button
-                  onClick={() => setViewMode('host')}
-                  className={viewMode === 'host' ? 'active' : ''}
-                >
+                <button onClick={() => setViewMode('host')} className={viewMode === 'host' ? 'active' : ''}>
                   Host View
                 </button>
-                <button
-                  onClick={() => setViewMode('player')}
-                  className={viewMode === 'player' ? 'active' : ''}
-                >
+                <button onClick={() => setViewMode('player')} className={viewMode === 'player' ? 'active' : ''}>
                   Player View
                 </button>
-                <button
-                  onClick={() => setViewMode('screen')}
-                  className={viewMode === 'screen' ? 'active' : ''}
-                >
+                <button onClick={() => setViewMode('screen')} className={viewMode === 'screen' ? 'active' : ''}>
                   Screen View
                 </button>
               </>
@@ -1336,9 +1807,9 @@ function App() {
             <div className="hero-row">
               <div>
                 <div className="eyebrow">Host Control</div>
-                <h2 className="hero-title">Run the round from one place</h2>
+                <h2 className="hero-title">Run the whole category in one go</h2>
                 <p className="hero-text">
-                  Clear phase control, shared screen state, and live round monitoring.
+                  Choose any category, load all 8 questions up front, then move fast through the set while the host view keeps the full leaderboard.
                 </p>
               </div>
 
@@ -1385,19 +1856,25 @@ function App() {
                     </div>
 
                     <div className="stat-card">
-                      <div className="stat-label">Round</div>
-                      <div className="stat-value">{createdGame.current_question_number}</div>
+                      <div className="stat-label">Question</div>
+                      <div className="stat-value">
+                        {createdGame.current_question_number} / {TOTAL_QUESTIONS}
+                      </div>
                     </div>
 
                     <div className="stat-card">
-                      <div className="stat-label">Players</div>
-                      <div className="stat-value">{playersInGame.length}</div>
+                      <div className="stat-label">Category</div>
+                      <div className="stat-value">{getCategoryNumber(createdGame.current_question_number)}</div>
                     </div>
 
                     <div className="stat-card">
                       <div className="stat-label">Submissions</div>
                       <div className="stat-value">{submissionCount}</div>
                     </div>
+                  </div>
+
+                  <div className="status-box" style={{ marginBottom: '16px' }}>
+                    <p><strong>Set progress:</strong> {getRoundProgressLabel(createdGame.current_question_number)}</p>
                   </div>
 
                   <div className="screen-url-box">
@@ -1461,27 +1938,41 @@ function App() {
             </div>
 
             <div className="panel">
-              <h2>Template Question</h2>
+              <h2>Category Loader</h2>
 
               <div className="field-block">
-                <label className="field-label">Choose template</label>
+                <label className="field-label">Choose category</label>
                 <select
-                  value={selectedTemplateId}
-                  onChange={(e) => setSelectedTemplateId(e.target.value)}
+                  value={selectedCategoryNumber}
+                  onChange={(e) => setSelectedCategoryNumber(e.target.value)}
                   className="field-input"
                 >
-                  <option value="">Select a question template</option>
-                  {templates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.title}
-                    </option>
-                  ))}
+                  {Array.from({ length: TOTAL_CATEGORIES }, (_, index) => {
+                    const categoryNumber = index + 1
+                    return (
+                      <option key={categoryNumber} value={String(categoryNumber)}>
+                        {getCategoryLabelFromCategory(categoryNumber)}
+                      </option>
+                    )
+                  })}
                 </select>
+              </div>
+
+              <div className="status-box" style={{ marginBottom: '16px' }}>
+                <p><strong>Selected category:</strong> {getCategoryLabelFromCategory(Number(selectedCategoryNumber || 1))}</p>
+                <p><strong>Question range:</strong> {getCategoryStartQuestionFromCategory(Number(selectedCategoryNumber || 1))}–{getCategoryEndQuestionFromCategory(Number(selectedCategoryNumber || 1))}</p>
+                <p><strong>Templates loaded:</strong> {templates.length} / {TOTAL_QUESTIONS}</p>
               </div>
 
               <div className="control-row">
                 <button onClick={loadTemplates}>Reload Templates</button>
-                <button onClick={loadSelectedTemplate}>Load Selected Template</button>
+                <button
+                  onClick={() => loadCategoryTemplates(Number(selectedCategoryNumber || 1), true)}
+                  disabled={!createdGame}
+                  className="primary-button"
+                >
+                  Load Selected Category
+                </button>
               </div>
 
               <div className="status-box">
@@ -1490,11 +1981,13 @@ function App() {
             </div>
 
             <div className="panel">
-              <h2>Current Round</h2>
+              <h2>Current Question</h2>
 
               <div className="status-box">
                 <p><strong>Round number:</strong> {createdGame?.current_question_number || 1}</p>
-                <p><strong>Question status:</strong> {currentQuestion?.status || 'Not saved yet'}</p>
+                <p><strong>Category:</strong> {createdGame ? getCategoryLabel(createdGame.current_question_number) : 'Category 1'}</p>
+                <p><strong>Question in category:</strong> {createdGame ? `${getQuestionNumberInCategory(createdGame.current_question_number)} / ${QUESTIONS_PER_CATEGORY}` : `1 / ${QUESTIONS_PER_CATEGORY}`}</p>
+                <p><strong>Question status:</strong> {currentQuestion?.status || 'Not loaded yet'}</p>
                 <p><strong>Question message:</strong> {questionMessage || 'Waiting'}</p>
               </div>
 
@@ -1511,7 +2004,7 @@ function App() {
 
               <div className="option-header">
                 <span>Answer options</span>
-                <span>{answerOptions.filter((option) => option.is_correct).length} / 5 marked correct</span>
+                <span>{answerOptions.filter((option) => option.is_correct).length} / 1 marked correct</span>
               </div>
 
               <div className="option-list">
@@ -1539,10 +2032,10 @@ function App() {
               <div className="control-stack">
                 <button
                   onClick={saveQuestion}
-                  disabled={isSavingQuestion || !createdGame}
-                  className={!currentQuestion ? 'primary-button' : ''}
+                  disabled={isSavingQuestion || !createdGame || !currentQuestion}
+                  className={!currentQuestion ? '' : 'primary-button'}
                 >
-                  {isSavingQuestion ? 'Saving...' : 'Save Question'}
+                  {isSavingQuestion ? 'Saving...' : 'Save Current Question'}
                 </button>
 
                 <button
@@ -1566,7 +2059,7 @@ function App() {
                   disabled={!canRevealAnswers}
                   className={canRevealAnswers ? 'primary-button' : ''}
                 >
-                  Reveal Answers
+                  Reveal Answer
                 </button>
 
                 <button onClick={goToNextQuestion} disabled={!canGoNext}>
@@ -1597,7 +2090,7 @@ function App() {
                   {playersInGame.map((player) => (
                     <div key={player.id} className="player-chip">
                       <span>{player.name}</span>
-                      <strong>{formatMoney(player.total_score)}</strong>
+                      <strong>{formatScore(player.total_score)}</strong>
                     </div>
                   ))}
                 </div>
@@ -1609,7 +2102,7 @@ function App() {
             </div>
 
             <div className="panel">
-              <h2>Leaderboard Preview</h2>
+              <h2>Full Leaderboard</h2>
 
               {hostLeaderboardPlayers.length > 0 ? (
                 <div className="leaderboard-list">
@@ -1617,7 +2110,7 @@ function App() {
                     <div key={player.id} className={`leaderboard-row ${index === 0 ? 'leaderboard-row-top' : ''}`}>
                       <div className="leaderboard-rank">#{index + 1}</div>
                       <div className="leaderboard-name">{player.name}</div>
-                      <div className="leaderboard-score">{formatMoney(player.total_score)}</div>
+                      <div className="leaderboard-score">{formatScore(player.total_score)}</div>
                     </div>
                   ))}
                 </div>
@@ -1692,10 +2185,8 @@ function App() {
                 }}
               >
                 <div className="question-card-top" style={{ marginBottom: '10px' }}>
-                  <span className="question-round">Question {loadedPlayerQuestion.question_number}</span>
-                  <span className={`question-status question-status-${loadedPlayerQuestion.status}`}>
-                    live
-                  </span>
+                  <span className="question-round">{getRoundProgressLabel(loadedPlayerQuestion.question_number)}</span>
+                  <span className={`question-status question-status-${loadedPlayerQuestion.status}`}>live</span>
                 </div>
 
                 <h2
@@ -1718,7 +2209,18 @@ function App() {
                     textAlign: 'center',
                   }}
                 >
-                  Select exactly 5 answers — <strong>{selectedOptionIds.length} / 5 selected</strong>
+                  Pick 1 answer — <strong>{selectedOptionIds.length} / 1 selected</strong>
+                </div>
+
+                <div
+                  className="selection-counter"
+                  style={{
+                    fontSize: '15px',
+                    marginBottom: '12px',
+                    textAlign: 'center',
+                  }}
+                >
+                  Current category score — <strong>{playerSetScore} / {QUESTIONS_PER_CATEGORY}</strong>
                 </div>
 
                 <button
@@ -1726,7 +2228,7 @@ function App() {
                   disabled={
                     isSubmitting ||
                     loadedPlayerQuestion.status !== 'open' ||
-                    selectedOptionIds.length !== 5
+                    selectedOptionIds.length !== 1
                   }
                   className="primary-button full-width"
                   style={{
@@ -1737,15 +2239,15 @@ function App() {
                     marginBottom: '16px',
                   }}
                 >
-                  {isSubmitting ? 'Submitting...' : 'Submit Answers'}
+                  {isSubmitting ? 'Submitting...' : 'Submit Answer'}
                 </button>
 
                 <div
                   className="answers-grid"
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '8px',
+                    gridTemplateColumns: '1fr',
+                    gap: '10px',
                   }}
                 >
                   {loadedPlayerOptions.map((option) => {
@@ -1756,19 +2258,12 @@ function App() {
                         key={option.id}
                         type="button"
                         onClick={() => togglePlayerOption(option.id)}
-                        disabled={
-                          isSubmitting ||
-                          loadedPlayerQuestion.status !== 'open' ||
-                          (!isSelected && selectedOptionIds.length >= 5)
-                        }
-                        className={[
-                          'answer-tile',
-                          isSelected ? 'answer-tile-selected' : '',
-                        ].join(' ').trim()}
+                        disabled={isSubmitting || loadedPlayerQuestion.status !== 'open'}
+                        className={['answer-tile', isSelected ? 'answer-tile-selected' : ''].join(' ').trim()}
                         style={{
-                          padding: '10px 12px',
-                          minHeight: '52px',
-                          fontSize: '14px',
+                          padding: '14px 16px',
+                          minHeight: '64px',
+                          fontSize: '16px',
                           ...(isSelected
                             ? {
                                 borderColor: 'rgba(255, 62, 168, 0.95)',
@@ -1822,12 +2317,14 @@ function App() {
                   ✓
                 </div>
 
-                <h2 style={{ fontSize: '34px', marginBottom: '12px', color: '#000' }}>
-                  Answers Submitted
-                </h2>
+                <h2 style={{ fontSize: '34px', marginBottom: '12px', color: '#000' }}>Answer Submitted</h2>
 
-                <p style={{ fontSize: '18px', color: '#526274', marginBottom: 0 }}>
-                  Waiting for the host to reveal the answers...
+                <p style={{ fontSize: '18px', color: '#526274', marginBottom: '12px' }}>
+                  Waiting for the host to reveal the answer...
+                </p>
+
+                <p style={{ fontSize: '16px', color: '#526274', marginBottom: 0 }}>
+                  Category score: <strong>{playerSetScore} / {QUESTIONS_PER_CATEGORY}</strong>
                 </p>
               </div>
             </div>
@@ -1856,7 +2353,7 @@ function App() {
                     }}
                   >
                     <div className="question-card-top" style={{ marginBottom: '10px' }}>
-                      <span className="question-round">Question {loadedPlayerQuestion.question_number}</span>
+                      <span className="question-round">{getRoundProgressLabel(loadedPlayerQuestion.question_number)}</span>
                       <span className={`question-status question-status-${loadedPlayerQuestion.status}`}>
                         {loadedPlayerQuestion.status}
                       </span>
@@ -1905,6 +2402,10 @@ function App() {
                         )
                       })}
                     </div>
+
+                    <div className="status-box" style={{ marginTop: '16px' }}>
+                      <p><strong>Category score:</strong> {playerSetScore} / {QUESTIONS_PER_CATEGORY}</p>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -1914,7 +2415,7 @@ function App() {
 
                     <div className="result-box">
                       <p><strong>Name:</strong> {joinedPlayer.name}</p>
-                      <p><strong>Score:</strong> {formatMoney(joinedPlayer.total_score)}</p>
+                      <p><strong>Category score:</strong> {playerSetScore} / {QUESTIONS_PER_CATEGORY}</p>
                     </div>
 
                     <button onClick={() => loadQuestionForPlayer(true)} className="full-width">
@@ -1925,13 +2426,22 @@ function App() {
                       <p><strong>Status:</strong> {playerQuestionMessage || 'Waiting'}</p>
                     </div>
 
+                    {playerLockedOut && loadedPlayerQuestion && (
+                      <div className="result-box">
+                        <p><strong>Locked out.</strong></p>
+                        <p>
+                          You got one wrong in {getCategoryLabel(loadedPlayerQuestion.question_number)} and cannot answer the remaining questions in this set.
+                        </p>
+                      </div>
+                    )}
+
                     {!loadedPlayerQuestion && (
                       <div className="result-box">
                         <p>Once the host opens a question, it will appear here.</p>
                       </div>
                     )}
 
-                    {loadedPlayerQuestion && loadedPlayerQuestion.status === 'closed' && !submittedResult && (
+                    {loadedPlayerQuestion && loadedPlayerQuestion.status === 'closed' && !submittedResult && !playerLockedOut && (
                       <div className="result-box">
                         <p><strong>Question closed.</strong></p>
                         <p>The host has locked answers. Wait for the reveal.</p>
@@ -1954,12 +2464,7 @@ function App() {
                 <span>Screen View</span>
               </div>
 
-              <div
-                style={{
-                  display: 'grid',
-                  placeItems: 'center',
-                }}
-              >
+              <div style={{ display: 'grid', placeItems: 'center' }}>
                 <div
                   style={{
                     width: '100%',
@@ -2022,12 +2527,7 @@ function App() {
                 <span>Holding Screen</span>
               </div>
 
-              <div
-                style={{
-                  display: 'grid',
-                  placeItems: 'center',
-                }}
-              >
+              <div style={{ display: 'grid', placeItems: 'center' }}>
                 <div
                   style={{
                     width: '100%',
@@ -2066,7 +2566,7 @@ function App() {
           {createdGame && gamePhase === GAME_PHASES.LOBBY && (
             <div style={screenFrameStyle}>
               <div style={screenTopBarStyle}>
-                <span>Round {createdGame.current_question_number}</span>
+                <span>{getRoundProgressLabel(createdGame.current_question_number)}</span>
                 <span>{playersInGame.length} players joined</span>
               </div>
 
@@ -2173,16 +2673,11 @@ function App() {
           {createdGame && gamePhase === GAME_PHASES.QUESTION_READY && (
             <div style={screenFrameStyle}>
               <div style={screenTopBarStyle}>
-                <span>Join code {createdGame.join_code}</span>
+                <span>{getRoundProgressLabel(createdGame.current_question_number)}</span>
                 <span>{playersInGame.length} players joined</span>
               </div>
 
-              <div
-                style={{
-                  display: 'grid',
-                  placeItems: 'center',
-                }}
-              >
+              <div style={{ display: 'grid', placeItems: 'center' }}>
                 <div
                   style={{
                     width: '100%',
@@ -2219,7 +2714,7 @@ function App() {
                       marginBottom: '18px',
                     }}
                   >
-                    Next question coming up
+                    {getCategoryLabel(createdGame.current_question_number)}
                   </div>
 
                   <div
@@ -2228,7 +2723,7 @@ function App() {
                       opacity: 0.92,
                     }}
                   >
-                    The host is preparing the round.
+                    Question {getQuestionNumberInCategory(createdGame.current_question_number)} of {QUESTIONS_PER_CATEGORY} is coming up.
                   </div>
                 </div>
               </div>
@@ -2238,7 +2733,7 @@ function App() {
           {createdGame && gamePhase === GAME_PHASES.QUESTION_OPEN && (
             <div style={screenFrameStyle}>
               <div style={screenTopBarStyle}>
-                <span>Join code {createdGame.join_code}</span>
+                <span>{getRoundProgressLabel(createdGame.current_question_number)}</span>
                 <span>{submissionCount} submissions</span>
               </div>
 
@@ -2264,7 +2759,7 @@ function App() {
                       marginBottom: '12px',
                     }}
                   >
-                    Pick exactly 5 answers
+                    Pick 1 answer
                   </div>
 
                   <div
@@ -2283,16 +2778,19 @@ function App() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
+                    gridTemplateColumns: '1fr',
                     gap: '18px',
                     alignContent: 'center',
+                    maxWidth: '1200px',
+                    width: '100%',
+                    margin: '0 auto',
                   }}
                 >
                   {currentQuestionOptions.map((option) => (
                     <div
                       key={option.id}
                       style={{
-                        minHeight: '126px',
+                        minHeight: '140px',
                         borderRadius: '26px',
                         background:
                           'linear-gradient(135deg, rgba(255,62,168,0.08), rgba(66,198,255,0.08)), rgba(255,255,255,0.07)',
@@ -2324,7 +2822,7 @@ function App() {
 
                       <div
                         style={{
-                          fontSize: 'clamp(24px, 1.8vw, 36px)',
+                          fontSize: 'clamp(30px, 2.2vw, 42px)',
                           fontWeight: 700,
                           lineHeight: 1.18,
                           color: '#fff',
@@ -2342,16 +2840,11 @@ function App() {
           {createdGame && gamePhase === GAME_PHASES.QUESTION_CLOSED && (
             <div style={screenFrameStyle}>
               <div style={screenTopBarStyle}>
-                <span>Join code {createdGame.join_code}</span>
+                <span>{getRoundProgressLabel(createdGame.current_question_number)}</span>
                 <span>{submissionCount} submissions received</span>
               </div>
 
-              <div
-                style={{
-                  display: 'grid',
-                  placeItems: 'center',
-                }}
-              >
+              <div style={{ display: 'grid', placeItems: 'center' }}>
                 <div
                   style={{
                     width: '100%',
@@ -2408,7 +2901,7 @@ function App() {
           {createdGame && gamePhase === GAME_PHASES.ANSWER_REVEAL && (
             <div style={screenFrameStyle}>
               <div style={screenTopBarStyle}>
-                <span>Join code {createdGame.join_code}</span>
+                <span>{getRoundProgressLabel(createdGame.current_question_number)}</span>
                 <span>Answer Reveal</span>
               </div>
 
@@ -2434,7 +2927,7 @@ function App() {
                       marginBottom: '12px',
                     }}
                   >
-                    Correct answers
+                    Correct answer
                   </div>
 
                   <div
@@ -2453,9 +2946,12 @@ function App() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
+                    gridTemplateColumns: '1fr',
                     gap: '18px',
                     alignContent: 'center',
+                    maxWidth: '1200px',
+                    width: '100%',
+                    margin: '0 auto',
                   }}
                 >
                   {currentQuestionOptions.map((option) => {
@@ -2465,7 +2961,7 @@ function App() {
                       <div
                         key={option.id}
                         style={{
-                          minHeight: '126px',
+                          minHeight: '140px',
                           borderRadius: '26px',
                           background: isCorrect
                             ? 'linear-gradient(135deg, rgba(40,255,170,0.22), rgba(66,198,255,0.14)), rgba(255,255,255,0.1)'
@@ -2499,7 +2995,7 @@ function App() {
 
                         <div
                           style={{
-                            fontSize: 'clamp(24px, 1.8vw, 36px)',
+                            fontSize: 'clamp(30px, 2.2vw, 42px)',
                             fontWeight: 700,
                             lineHeight: 1.18,
                             color: '#fff',
@@ -2529,8 +3025,8 @@ function App() {
           {createdGame && gamePhase === GAME_PHASES.LEADERBOARD && (
             <div style={screenFrameStyle}>
               <div style={screenTopBarStyle}>
-                <span>Join code {createdGame.join_code}</span>
-                <span>Results</span>
+                <span>{getCategoryLabel(createdGame.current_question_number)} Storyboard</span>
+                <span>3 featured players</span>
               </div>
 
               <div
@@ -2541,7 +3037,7 @@ function App() {
                   minHeight: '100%',
                 }}
               >
-                {screenLeaderboardPlayers.length === 0 ? (
+                {screenLeaderboardCards.length === 0 ? (
                   <div
                     style={{
                       textAlign: 'center',
@@ -2553,12 +3049,12 @@ function App() {
                     No leaderboard data yet.
                   </div>
                 ) : (
-                  screenLeaderboardPlayers.map((player) => (
+                  screenLeaderboardCards.map((card) => (
                     <div
-                      key={player.id}
+                      key={`${card.slot}-${card.player.id}`}
                       style={{
                         display: 'grid',
-                        gridTemplateColumns: 'minmax(0, 1fr) auto',
+                        gridTemplateColumns: '260px minmax(0, 1fr) auto',
                         alignItems: 'center',
                         gap: '28px',
                         padding: leaderboardRowPadding,
@@ -2572,13 +3068,26 @@ function App() {
                     >
                       <div
                         style={{
+                          fontSize: 'clamp(20px, 1.6vw, 30px)',
+                          fontWeight: 900,
+                          lineHeight: 1.04,
+                          color: 'rgba(255,255,255,0.78)',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.08em',
+                        }}
+                      >
+                        {card.slot}
+                      </div>
+
+                      <div
+                        style={{
                           fontSize: leaderboardNameSize,
                           fontWeight: 800,
                           lineHeight: 1.04,
                           color: '#fff',
                         }}
                       >
-                        {player.name}
+                        {card.player.name}
                       </div>
 
                       <div
@@ -2590,7 +3099,7 @@ function App() {
                           textShadow: '0 0 12px rgba(255,215,0,0.6)',
                         }}
                       >
-                        {formatMoney(player.total_score)}
+                        {formatScore(card.player.total_score)}
                       </div>
                     </div>
                   ))
