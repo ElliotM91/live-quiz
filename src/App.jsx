@@ -6,9 +6,38 @@ const HOST_KEY = 'host123'
 const SCREEN_KEY = 'screen123'
 const HOLDING_LOGO_URL = '/prize-fight-logo.png'
 
-const TOTAL_CATEGORIES = 4
+const TOTAL_CATEGORIES = 5
 const QUESTIONS_PER_CATEGORY = 8
 const TOTAL_QUESTIONS = TOTAL_CATEGORIES * QUESTIONS_PER_CATEGORY
+
+const CATEGORY_CONFIG = {
+  1: {
+    displayName: 'Test Category',
+    templatePrefix: 'Test Category',
+    prizes: { bottom: 500, middle: 1000, top: 5000 },
+  },
+  2: {
+    displayName: 'Category 1',
+    templatePrefix: 'Category 1',
+    prizes: { bottom: 500, middle: 1000, top: 5000 },
+  },
+  3: {
+    displayName: 'Category 2',
+    templatePrefix: 'Category 2',
+    prizes: { bottom: 1000, middle: 2500, top: 10000 },
+  },
+  4: {
+    displayName: 'Category 3',
+    templatePrefix: 'Category 3',
+    prizes: { bottom: 2500, middle: 5000, top: 15000 },
+  },
+  5: {
+    displayName: 'Category 4',
+    templatePrefix: 'Category 4',
+    prizes: { bottom: 5000, middle: 7500, top: 20000 },
+  },
+}
+
 
 const GAME_PHASES = {
   LOBBY: 'lobby',
@@ -182,11 +211,12 @@ function isFirstQuestionOfCategory(questionNumber) {
 }
 
 function getCategoryLabel(questionNumber) {
-  return `Category ${getCategoryNumber(questionNumber)}`
+  const categoryNumber = getCategoryNumber(questionNumber)
+  return CATEGORY_CONFIG[categoryNumber]?.displayName || `Category ${categoryNumber}`
 }
 
 function getCategoryLabelFromCategory(categoryNumber) {
-  return `Category ${categoryNumber}`
+  return CATEGORY_CONFIG[categoryNumber]?.displayName || `Category ${categoryNumber}`
 }
 
 function getRoundProgressLabel(questionNumber) {
@@ -195,9 +225,10 @@ function getRoundProgressLabel(questionNumber) {
 
 const SCREEN_LEADERBOARD_PRIZES = {
   1: { top: 5000, middle: 1000, bottom: 500 },
-  2: { top: 10000, middle: 2500, bottom: 1000 },
-  3: { top: 15000, middle: 5000, bottom: 2500 },
-  4: { top: 20000, middle: 7500, bottom: 5000 },
+  2: { top: 5000, middle: 1000, bottom: 500 },
+  3: { top: 10000, middle: 2500, bottom: 1000 },
+  4: { top: 15000, middle: 5000, bottom: 2500 },
+  5: { top: 20000, middle: 7500, bottom: 5000 },
 }
 
 function buildScreenLeaderboardCards(players, wrongOutSummaries, categoryNumber) {
@@ -570,17 +601,15 @@ function App() {
       return
     }
 
-    let categoryTemplates = allTemplates.filter((template) =>
-      String(template.title || '').toLowerCase().startsWith(`category ${categoryNumber} -`.toLowerCase())
+    const templatePrefix = CATEGORY_CONFIG[categoryNumber]?.templatePrefix || categoryLabel
+    const categoryTemplates = allTemplates.filter((template) =>
+      String(template.title || '').toLowerCase().startsWith(`${templatePrefix} -`.toLowerCase())
     )
 
     if (categoryTemplates.length !== QUESTIONS_PER_CATEGORY) {
-      const sliceStart = (categoryNumber - 1) * QUESTIONS_PER_CATEGORY
-      categoryTemplates = allTemplates.slice(sliceStart, sliceStart + QUESTIONS_PER_CATEGORY)
-    }
-
-    if (categoryTemplates.length !== QUESTIONS_PER_CATEGORY) {
-      setTemplateMessage(`Could not find ${QUESTIONS_PER_CATEGORY} templates for ${categoryLabel}.`)
+      setTemplateMessage(
+        `Could not find exactly ${QUESTIONS_PER_CATEGORY} templates for ${categoryLabel}. Expected titles starting with "${templatePrefix} -".`
+      )
       return
     }
 
@@ -696,13 +725,11 @@ function App() {
       }
     }
 
-    const isDifferentCategory = getCategoryNumber(createdGame.current_question_number) !== categoryNumber
-
     const { data: updatedGame, error: gameUpdateError } = await supabase
       .from('games')
       .update({
         current_question_number: startQuestion,
-        status: GAME_PHASES.QUESTION_READY,
+        status: GAME_PHASES.QUESTION_OPEN,
       })
       .eq('id', createdGame.id)
       .select()
@@ -713,34 +740,49 @@ function App() {
       return
     }
 
-    if (isDifferentCategory) {
-      const { error: resetPlayersError } = await supabase
-        .from('players')
-        .update({
-          total_score: 0,
-          total_time_ms: 0,
-        })
-        .eq('game_id', createdGame.id)
+    const { error: resetPlayersError } = await supabase
+      .from('players')
+      .update({
+        total_score: 0,
+        total_time_ms: 0,
+      })
+      .eq('game_id', createdGame.id)
 
-      if (resetPlayersError) {
-        setTemplateMessage(`${categoryLabel} loaded, but player reset failed: ${resetPlayersError.message}`)
+    if (resetPlayersError) {
+      setTemplateMessage(`${categoryLabel} loaded, but player reset failed: ${resetPlayersError.message}`)
+      return
+    }
+
+    const firstQuestionRecord = existingMap[startQuestion]
+    if (firstQuestionRecord) {
+      const { error: openFirstQuestionError } = await supabase
+        .from('questions')
+        .update({
+          status: 'open',
+          opened_at: new Date().toISOString(),
+          closed_at: null,
+        })
+        .eq('id', firstQuestionRecord.id)
+
+      if (openFirstQuestionError) {
+        setTemplateMessage(`${categoryLabel} loaded, but could not open the first question: ${openFirstQuestionError.message}`)
         return
       }
-
-      setLeaderboard([])
-      setWrongOutSummaries([])
-      setSubmissionCount(0)
-      setSubmissionCountMessage('')
-      if (joinedPlayer) {
-        setJoinedPlayer({
-          ...joinedPlayer,
-          total_score: 0,
-          total_time_ms: 0,
-        })
-      }
-      setPlayerLockedOut(false)
-      setPlayerSetScore(0)
     }
+
+    setLeaderboard([])
+    setWrongOutSummaries([])
+    setSubmissionCount(0)
+    setSubmissionCountMessage('')
+    if (joinedPlayer) {
+      setJoinedPlayer({
+        ...joinedPlayer,
+        total_score: 0,
+        total_time_ms: 0,
+      })
+    }
+    setPlayerLockedOut(false)
+    setPlayerSetScore(0)
 
     setCreatedGame(updatedGame)
     localStorage.setItem('hostGameCode', updatedGame.join_code)
@@ -754,11 +796,11 @@ function App() {
     await loadLeaderboard(false)
     setTemplateMessage(
       showMessage
-        ? `${categoryLabel} loaded. All ${QUESTIONS_PER_CATEGORY} questions are ready.`
+        ? `${categoryLabel} loaded and opened. You can jump to another category at any time.`
         : 'Category loaded.'
     )
-    setQuestionMessage('Full category loaded. You can now move through the set quickly.')
-    setPlayerQuestionMessage(`${categoryLabel} is ready.`)
+    setQuestionMessage('Category switched. The first question is now live.')
+    setPlayerQuestionMessage(`${categoryLabel} is live.`)
   }
 
   async function createGame() {
@@ -1638,8 +1680,6 @@ function App() {
 
     const freshGame = await refreshGame(createdGame.id, false)
     const gameToUse = freshGame || createdGame
-
-    setSelectedCategoryNumber(String(getCategoryNumber(gameToUse.current_question_number)))
 
     await loadCurrentQuestionForGame(gameToUse.id, gameToUse.current_question_number, false)
     await loadPlayersForCreatedGame(false)
