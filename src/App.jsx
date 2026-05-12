@@ -6,7 +6,7 @@ const HOST_KEY = 'host123'
 const SCREEN_KEY = 'screen123'
 const HOLDING_LOGO_URL = '/prize-fight-logo.png'
 
-const TOTAL_CATEGORIES = 5
+const TOTAL_CATEGORIES = 9
 const QUESTIONS_PER_CATEGORY = 8
 const TOTAL_QUESTIONS = TOTAL_CATEGORIES * QUESTIONS_PER_CATEGORY
 
@@ -34,6 +34,26 @@ const CATEGORY_CONFIG = {
   5: {
     displayName: 'Category 4',
     templatePrefix: 'Category 4',
+    prizes: { bottom: 5000, middle: 7500, top: 20000 },
+  },
+  6: {
+    displayName: 'Category 5',
+    templatePrefix: 'Category 5',
+    prizes: { bottom: 500, middle: 1000, top: 5000 },
+  },
+  7: {
+    displayName: 'Category 6',
+    templatePrefix: 'Category 6',
+    prizes: { bottom: 1000, middle: 2500, top: 10000 },
+  },
+  8: {
+    displayName: 'Category 7',
+    templatePrefix: 'Category 7',
+    prizes: { bottom: 2500, middle: 5000, top: 15000 },
+  },
+  9: {
+    displayName: 'Category 8',
+    templatePrefix: 'Category 8',
     prizes: { bottom: 5000, middle: 7500, top: 20000 },
   },
 }
@@ -1360,13 +1380,15 @@ function App() {
     if (existingSubmission) {
       setSubmittedResult(existingSubmission)
       setSelectedOptionIds(existingSubmission.selected_option_ids || [])
-    } else if (isNewQuestion) {
+    } else {
       setSelectedOptionIds([])
       setSubmittedResult(null)
     }
 
-    if (isNewQuestion && question.status === 'open' && !existingSubmission && !progress.lockedOut) {
-      setQuestionLoadedAt(Date.now())
+    if (question.status === 'open' && !existingSubmission && !progress.lockedOut) {
+      if (isNewQuestion || !questionLoadedAt) {
+        setQuestionLoadedAt(Date.now())
+      }
     }
 
     if (showMessage) {
@@ -2270,7 +2292,7 @@ function App() {
                     textAlign: 'center',
                   }}
                 >
-                  Pick 1 answer — <strong>{selectedOptionIds.length} / 1 selected</strong>
+                  Tap an answer to submit
                 </div>
 
                 <div
@@ -2282,7 +2304,7 @@ function App() {
                   }}
                 >
                   {loadedPlayerOptions.map((option) => {
-                    const isSelected = selectedOptionIds.includes(option.id)
+                    const isSelected = isSubmitting && selectedOptionIds.includes(option.id)
 
                     return (
                       <button
