@@ -1106,16 +1106,63 @@ function App() {
   }
 
   async function closeQuestion() {
-    if (!currentQuestion) {
+    if (!createdGame || !currentQuestion) {
       setQuestionMessage('Load the full category first.')
       return
+    }
+
+    const closedAt = new Date()
+    const fallbackResponseTimeMs = currentQuestion.opened_at
+      ? Math.max(0, closedAt.getTime() - new Date(currentQuestion.opened_at).getTime())
+      : 0
+
+    const { data: allPlayers, error: playersError } = await supabase
+      .from('players')
+      .select('*')
+      .eq('game_id', createdGame.id)
+
+    if (playersError) {
+      setQuestionMessage(`Could not check players before closing: ${playersError.message}`)
+      return
+    }
+
+    const { data: existingSubmissions, error: submissionsError } = await supabase
+      .from('submissions')
+      .select('player_id')
+      .eq('question_id', currentQuestion.id)
+
+    if (submissionsError) {
+      setQuestionMessage(`Could not check existing submissions before closing: ${submissionsError.message}`)
+      return
+    }
+
+    const submittedPlayerIds = new Set((existingSubmissions || []).map((submission) => submission.player_id))
+    const missingPlayers = (allPlayers || []).filter((player) => !submittedPlayerIds.has(player.id))
+
+    if (missingPlayers.length > 0) {
+      const missedSubmissionRows = missingPlayers.map((player) => ({
+        question_id: currentQuestion.id,
+        player_id: player.id,
+        selected_option_ids: [],
+        correct_count: 0,
+        response_time_ms: fallbackResponseTimeMs,
+      }))
+
+      const { error: missedSubmissionError } = await supabase
+        .from('submissions')
+        .insert(missedSubmissionRows)
+
+      if (missedSubmissionError) {
+        setQuestionMessage(`Could not mark missed answers as wrong: ${missedSubmissionError.message}`)
+        return
+      }
     }
 
     const { data, error } = await supabase
       .from('questions')
       .update({
         status: 'revealed',
-        closed_at: new Date().toISOString(),
+        closed_at: closedAt.toISOString(),
       })
       .eq('id', currentQuestion.id)
       .select()
@@ -1128,7 +1175,13 @@ function App() {
 
     setCurrentQuestion(data)
     await updateGameStatus(GAME_PHASES.ANSWER_REVEAL, 'Answer is now revealed.')
-    setQuestionMessage('Answer is now revealed.')
+    await loadSubmissionCount(false)
+    await loadLeaderboard(false)
+    setQuestionMessage(
+      missingPlayers.length > 0
+        ? `Answer is now revealed. ${missingPlayers.length} missed answer(s) counted as wrong.`
+        : 'Answer is now revealed.'
+    )
   }
 
   async function revealAnswers() {
