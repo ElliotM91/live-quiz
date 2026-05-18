@@ -7,7 +7,7 @@ const SCREEN_KEY = 'screen123'
 const HOLDING_LOGO_URL = '/prize-fight-logo.png'
 
 const TOTAL_CATEGORIES = 9
-const QUESTIONS_PER_CATEGORY = 8
+const QUESTIONS_PER_CATEGORY = 5
 const TOTAL_QUESTIONS = TOTAL_CATEGORIES * QUESTIONS_PER_CATEGORY
 
 const CATEGORY_CONFIG = {
@@ -29,12 +29,12 @@ const CATEGORY_CONFIG = {
   4: {
     displayName: 'Category 3',
     templatePrefix: 'Category 3',
-    prizes: { bottom: 2500, middle: 5000, top: 15000 },
+    prizes: { bottom: 2500, middle: 5000, top: 20000 },
   },
   5: {
     displayName: 'Category 4',
     templatePrefix: 'Category 4',
-    prizes: { bottom: 5000, middle: 7500, top: 20000 },
+    prizes: { bottom: 500, middle: 1000, top: 5000 },
   },
   6: {
     displayName: 'Category 5',
@@ -44,7 +44,7 @@ const CATEGORY_CONFIG = {
   7: {
     displayName: 'Category 6',
     templatePrefix: 'Category 6',
-    prizes: { bottom: 1000, middle: 2500, top: 10000 },
+    prizes: { bottom: 2500, middle: 5000, top: 20000 },
   },
   8: {
     displayName: 'Category 7',
@@ -396,6 +396,7 @@ function App() {
   const canShowQuestionOnScreen = !!createdGame && !!currentQuestion
   const canShowLeaderboard = !!createdGame
   const canGoNext = !!createdGame && (createdGame.current_question_number || 1) < TOTAL_QUESTIONS
+  const canRestartCategoryFromQuestionTwo = !!createdGame && getQuestionNumberInCategory(createdGame.current_question_number || 1) === 1
 
   const playerQuestionIsOpen = loadedPlayerQuestion?.status === 'open'
   const playerQuestionIsRevealed = loadedPlayerQuestion?.status === 'revealed'
@@ -1238,6 +1239,125 @@ function App() {
   async function showLeaderboardOnScreen() {
     if (!createdGame) return
     await updateGameStatus(GAME_PHASES.LEADERBOARD, 'Showing leaderboard on screen.')
+  }
+
+  async function restartCategoryFromQuestionTwo() {
+    if (!createdGame) {
+      setQuestionMessage('Create a game first.')
+      return
+    }
+
+    const currentNumber = createdGame.current_question_number || 1
+    const categoryStart = getCategoryStartQuestion(currentNumber)
+    const questionTwoNumber = categoryStart + 1
+    const categoryLabel = getCategoryLabel(currentNumber)
+
+    if (getQuestionNumberInCategory(currentNumber) !== 1) {
+      setQuestionMessage('This rescue button only works from the first question of a category.')
+      return
+    }
+
+    const { data: categoryQuestions, error: categoryQuestionsError } = await supabase
+      .from('questions')
+      .select('id, question_number')
+      .eq('game_id', createdGame.id)
+      .gte('question_number', categoryStart)
+      .lte('question_number', getCategoryEndQuestion(currentNumber))
+
+    if (categoryQuestionsError || !categoryQuestions) {
+      setQuestionMessage(`Could not load category questions: ${categoryQuestionsError?.message || 'Unknown error'}`)
+      return
+    }
+
+    const questionTwo = categoryQuestions.find((question) => question.question_number === questionTwoNumber)
+
+    if (!questionTwo) {
+      setQuestionMessage(`Question 2 for ${categoryLabel} has not been loaded yet.`)
+      return
+    }
+
+    const categoryQuestionIds = categoryQuestions.map((question) => question.id)
+
+    if (categoryQuestionIds.length > 0) {
+      const { error: deleteSubmissionsError } = await supabase
+        .from('submissions')
+        .delete()
+        .in('question_id', categoryQuestionIds)
+
+      if (deleteSubmissionsError) {
+        setQuestionMessage(`Could not clear category submissions: ${deleteSubmissionsError.message}`)
+        return
+      }
+    }
+
+    const { error: resetPlayersError } = await supabase
+      .from('players')
+      .update({
+        total_score: 0,
+        total_time_ms: 0,
+      })
+      .eq('game_id', createdGame.id)
+
+    if (resetPlayersError) {
+      setQuestionMessage(`Could not reset player scores: ${resetPlayersError.message}`)
+      return
+    }
+
+    const { error: openQuestionError } = await supabase
+      .from('questions')
+      .update({
+        status: 'open',
+        opened_at: new Date().toISOString(),
+        closed_at: null,
+      })
+      .eq('id', questionTwo.id)
+
+    if (openQuestionError) {
+      setQuestionMessage(`Could not open question 2: ${openQuestionError.message}`)
+      return
+    }
+
+    const { data: updatedGame, error: gameUpdateError } = await supabase
+      .from('games')
+      .update({
+        current_question_number: questionTwoNumber,
+        status: GAME_PHASES.QUESTION_OPEN,
+      })
+      .eq('id', createdGame.id)
+      .select()
+      .single()
+
+    if (gameUpdateError || !updatedGame) {
+      setQuestionMessage(`Could not restart from question 2: ${gameUpdateError?.message || 'Unknown error'}`)
+      return
+    }
+
+    setCreatedGame(updatedGame)
+    setSelectedOptionIds([])
+    setSubmissionMessage('')
+    setSubmittedResult(null)
+    setQuestionLoadedAt(null)
+    setSubmissionCount(0)
+    setWrongOutSummaries([])
+    setLeaderboard([])
+
+    if (joinedPlayer) {
+      setJoinedPlayer({
+        ...joinedPlayer,
+        total_score: 0,
+        total_time_ms: 0,
+      })
+    }
+
+    setPlayerLockedOut(false)
+    setPlayerSetScore(0)
+
+    await loadCurrentQuestionForGame(updatedGame.id, questionTwoNumber, false)
+    await loadLeaderboard(false)
+    await loadSubmissionCount(false)
+
+    setQuestionMessage(`${categoryLabel} rescued. Everyone is back in from question 2.`)
+    setStatusMessage(`${categoryLabel} restarted from question 2.`)
   }
 
   async function goToNextQuestion() {
@@ -2116,6 +2236,12 @@ function App() {
                   className="primary-button"
                 >
                   Load Selected Category
+                </button>
+                <button
+                  onClick={restartCategoryFromQuestionTwo}
+                  disabled={!canRestartCategoryFromQuestionTwo}
+                >
+                  Rescue Category from Q2
                 </button>
               </div>
 
