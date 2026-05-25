@@ -12,51 +12,52 @@ const TOTAL_QUESTIONS = TOTAL_CATEGORIES * QUESTIONS_PER_CATEGORY
 
 const CATEGORY_CONFIG = {
   1: {
-    displayName: 'Test Category',
-    templatePrefix: 'Test Category',
-    prizes: { bottom: 500, middle: 1000, top: 5000 },
-  },
-  2: {
     displayName: 'Category 1',
     templatePrefix: 'Category 1',
     prizes: { bottom: 500, middle: 1000, top: 5000 },
   },
-  3: {
+  2: {
     displayName: 'Category 2',
     templatePrefix: 'Category 2',
     prizes: { bottom: 1000, middle: 2500, top: 10000 },
   },
-  4: {
+  3: {
     displayName: 'Category 3',
     templatePrefix: 'Category 3',
     prizes: { bottom: 2500, middle: 5000, top: 20000 },
   },
-  5: {
+  4: {
     displayName: 'Category 4',
     templatePrefix: 'Category 4',
     prizes: { bottom: 500, middle: 1000, top: 5000 },
   },
-  6: {
+  5: {
     displayName: 'Category 5',
     templatePrefix: 'Category 5',
-    prizes: { bottom: 500, middle: 1000, top: 5000 },
+    prizes: { bottom: 1000, middle: 2500, top: 10000 },
   },
-  7: {
+  6: {
     displayName: 'Category 6',
     templatePrefix: 'Category 6',
     prizes: { bottom: 2500, middle: 5000, top: 20000 },
   },
-  8: {
+  7: {
     displayName: 'Category 7',
     templatePrefix: 'Category 7',
-    prizes: { bottom: 2500, middle: 5000, top: 15000 },
+    prizes: { bottom: 500, middle: 1000, top: 5000 },
   },
-  9: {
+  8: {
     displayName: 'Category 8',
     templatePrefix: 'Category 8',
-    prizes: { bottom: 5000, middle: 7500, top: 20000 },
+    prizes: { bottom: 1000, middle: 2500, top: 10000 },
+  },
+  9: {
+    displayName: 'Category 9',
+    templatePrefix: 'Category 9',
+    prizes: { bottom: 2500, middle: 5000, top: 20000 },
   },
 }
+
 
 
 const GAME_PHASES = {
@@ -243,14 +244,6 @@ function getRoundProgressLabel(questionNumber) {
   return `${getCategoryLabel(questionNumber)} · Question ${getQuestionNumberInCategory(questionNumber)} of ${QUESTIONS_PER_CATEGORY}`
 }
 
-const SCREEN_LEADERBOARD_PRIZES = {
-  1: { top: 5000, middle: 1000, bottom: 500 },
-  2: { top: 5000, middle: 1000, bottom: 500 },
-  3: { top: 10000, middle: 2500, bottom: 1000 },
-  4: { top: 15000, middle: 5000, bottom: 2500 },
-  5: { top: 20000, middle: 7500, bottom: 5000 },
-}
-
 function buildScreenLeaderboardCards(players, wrongOutSummaries, categoryNumber) {
   const sorted = sortLeaderboard(players || [])
   if (!sorted.length) return []
@@ -301,7 +294,7 @@ function buildScreenLeaderboardCards(players, wrongOutSummaries, categoryNumber)
     worstPlayer = [...sorted].reverse().find((player) => !usedIds.has(player.id)) || null
   }
 
-  const prizes = SCREEN_LEADERBOARD_PRIZES[categoryNumber] || SCREEN_LEADERBOARD_PRIZES[1]
+  const prizes = CATEGORY_CONFIG[categoryNumber]?.prizes || CATEGORY_CONFIG[1].prizes
 
   const cards = [
     { slot: 'HEAVYWEIGHT', player: secondBest, money: prizes.top },
@@ -396,6 +389,7 @@ function App() {
   const canShowQuestionOnScreen = !!createdGame && !!currentQuestion
   const canShowLeaderboard = !!createdGame
   const canGoNext = !!createdGame && (createdGame.current_question_number || 1) < TOTAL_QUESTIONS
+  const canGoPrevious = !!createdGame && (createdGame.current_question_number || 1) > 1
   const canRestartCategoryFromQuestionTwo = !!createdGame && getQuestionNumberInCategory(createdGame.current_question_number || 1) === 1
 
   const playerQuestionIsOpen = loadedPlayerQuestion?.status === 'open'
@@ -610,7 +604,7 @@ function App() {
     const endQuestion = getCategoryEndQuestionFromCategory(categoryNumber)
     const categoryLabel = getCategoryLabelFromCategory(categoryNumber)
 
-    setTemplateMessage(`Loading all 8 questions for ${categoryLabel}...`)
+    setTemplateMessage(`Loading all 5 questions for ${categoryLabel}...`)
 
     const { data: allTemplates, error: templatesError } = await supabase
       .from('question_templates')
@@ -1360,6 +1354,119 @@ function App() {
     setStatusMessage(`${categoryLabel} restarted from question 2.`)
   }
 
+  async function goToPreviousQuestion() {
+    if (!createdGame) {
+      setQuestionMessage('Create a game first.')
+      return
+    }
+
+    const currentNumber = createdGame.current_question_number || 1
+    const previousNumber = currentNumber - 1
+
+    if (previousNumber < 1) {
+      setQuestionMessage('You are already at the first question.')
+      return
+    }
+
+    const previousCategoryStart = getCategoryStartQuestion(previousNumber)
+    const previousCategoryEnd = getCategoryEndQuestion(previousNumber)
+
+    const { data: categoryQuestions, error: categoryQuestionsError } = await supabase
+      .from('questions')
+      .select('id, question_number')
+      .eq('game_id', createdGame.id)
+      .gte('question_number', previousCategoryStart)
+      .lte('question_number', previousCategoryEnd)
+
+    if (categoryQuestionsError || !categoryQuestions) {
+      setQuestionMessage(`Could not load previous category questions: ${categoryQuestionsError?.message || 'Unknown error'}`)
+      return
+    }
+
+    const previousQuestion = categoryQuestions.find((question) => question.question_number === previousNumber)
+
+    if (!previousQuestion) {
+      setQuestionMessage(`No saved question found for question ${previousNumber}.`)
+      return
+    }
+
+    const questionsToClear = categoryQuestions
+      .filter((question) => question.question_number >= previousNumber)
+      .map((question) => question.id)
+
+    if (questionsToClear.length > 0) {
+      const { error: deleteSubmissionsError } = await supabase
+        .from('submissions')
+        .delete()
+        .in('question_id', questionsToClear)
+
+      if (deleteSubmissionsError) {
+        setQuestionMessage(`Could not reinstate players for previous question: ${deleteSubmissionsError.message}`)
+        return
+      }
+    }
+
+    const { error: resetQuestionsError } = await supabase
+      .from('questions')
+      .update({
+        status: 'draft',
+        opened_at: null,
+        closed_at: null,
+      })
+      .in('id', questionsToClear)
+
+    if (resetQuestionsError) {
+      setQuestionMessage(`Could not reset previous question state: ${resetQuestionsError.message}`)
+      return
+    }
+
+    const { data: updatedGame, error: gameUpdateError } = await supabase
+      .from('games')
+      .update({
+        current_question_number: previousNumber,
+        status: GAME_PHASES.QUESTION_READY,
+      })
+      .eq('id', createdGame.id)
+      .select()
+      .single()
+
+    if (gameUpdateError || !updatedGame) {
+      setQuestionMessage(`Could not go back one question: ${gameUpdateError?.message || 'Unknown error'}`)
+      return
+    }
+
+    setCreatedGame(updatedGame)
+    setSelectedCategoryNumber(String(getCategoryNumber(previousNumber)))
+    localStorage.setItem('hostGameCode', updatedGame.join_code)
+
+    setSubmissionCount(0)
+    setSubmissionCountMessage('')
+    setSelectedOptionIds([])
+    setSubmissionMessage('')
+    setSubmittedResult(null)
+    setQuestionLoadedAt(null)
+    setWrongOutSummaries([])
+    setLeaderboard([])
+
+    if (joinedPlayer) {
+      setJoinedPlayer({
+        ...joinedPlayer,
+        total_score: 0,
+        total_time_ms: 0,
+      })
+      setPlayerLockedOut(false)
+      setPlayerSetScore(0)
+    }
+
+    await loadCurrentQuestionForGame(updatedGame.id, previousNumber, false)
+    await loadLeaderboard(false)
+    await loadSubmissionCount(false)
+
+    setQuestionMessage(`Moved back to ${getCategoryLabel(previousNumber)}. Players are reinstated from this question onward. Press Open Question when ready.`)
+    setStatusMessage('Moved back one question.')
+    setPlayerQuestionMessage('Waiting for the host to reopen the question.')
+  }
+
   async function goToNextQuestion() {
     if (!createdGame) {
       setQuestionMessage('Create a game first.')
@@ -1432,28 +1539,12 @@ function App() {
     const nextQuestion = await loadCurrentQuestionForGame(data.id, nextNumber, false)
 
     if (nextQuestion) {
-      const { data: openedQuestion, error: openNextError } = await supabase
-        .from('questions')
-        .update({
-          status: 'open',
-          opened_at: new Date().toISOString(),
-          closed_at: null,
-        })
-        .eq('id', nextQuestion.id)
-        .select()
-        .single()
-
-      if (openNextError) {
-        setQuestionMessage(`Moved to next question, but could not open it: ${openNextError.message}`)
-        return
-      }
-
-      setCurrentQuestion(openedQuestion)
-      await updateGameStatus(GAME_PHASES.QUESTION_OPEN, 'Next question is now live.')
+      setCurrentQuestion(nextQuestion)
+      await updateGameStatus(GAME_PHASES.QUESTION_READY, 'Next question is ready.')
       setQuestionMessage(
         enteringNewCategory
-          ? `${getCategoryLabel(nextNumber)} started and is now live.`
-          : 'Next question is now live.'
+          ? `${getCategoryLabel(nextNumber)} started. Press Open Question when ready.`
+          : 'Next question is ready. Press Open Question when ready.'
       )
     } else {
       setCurrentQuestion(null)
@@ -2322,6 +2413,10 @@ function App() {
                   className={canCloseQuestion ? 'primary-button' : ''}
                 >
                   Close Question
+                </button>
+
+                <button onClick={goToPreviousQuestion} disabled={!canGoPrevious}>
+                  Go Back One Question
                 </button>
 
                 <button onClick={goToNextQuestion} disabled={!canGoNext}>
