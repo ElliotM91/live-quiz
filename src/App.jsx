@@ -14,47 +14,47 @@ const CATEGORY_CONFIG = {
   1: {
     displayName: 'Category 1',
     templatePrefix: 'Category 1',
-    prizes: { bottom: 500, middle: 1000, top: 5000 },
+    prizes: { bottom: 500, middle: 2500, top: 5000 },
   },
   2: {
     displayName: 'Category 2',
     templatePrefix: 'Category 2',
-    prizes: { bottom: 1000, middle: 2500, top: 10000 },
+    prizes: { bottom: 1000, middle: 5000, top: 10000 },
   },
   3: {
     displayName: 'Category 3',
     templatePrefix: 'Category 3',
-    prizes: { bottom: 2500, middle: 5000, top: 20000 },
+    prizes: { bottom: 2000, middle: 10000, top: 20000 },
   },
   4: {
     displayName: 'Category 4',
     templatePrefix: 'Category 4',
-    prizes: { bottom: 500, middle: 1000, top: 5000 },
+    prizes: { bottom: 500, middle: 2500, top: 5000 },
   },
   5: {
     displayName: 'Category 5',
     templatePrefix: 'Category 5',
-    prizes: { bottom: 1000, middle: 2500, top: 10000 },
+    prizes: { bottom: 1000, middle: 5000, top: 10000 },
   },
   6: {
     displayName: 'Category 6',
     templatePrefix: 'Category 6',
-    prizes: { bottom: 2500, middle: 5000, top: 20000 },
+    prizes: { bottom: 2000, middle: 10000, top: 20000 },
   },
   7: {
     displayName: 'Category 7',
     templatePrefix: 'Category 7',
-    prizes: { bottom: 500, middle: 1000, top: 5000 },
+    prizes: { bottom: 500, middle: 2500, top: 5000 },
   },
   8: {
     displayName: 'Category 8',
     templatePrefix: 'Category 8',
-    prizes: { bottom: 1000, middle: 2500, top: 10000 },
+    prizes: { bottom: 1000, middle: 5000, top: 10000 },
   },
   9: {
     displayName: 'Category 9',
     templatePrefix: 'Category 9',
-    prizes: { bottom: 2500, middle: 5000, top: 20000 },
+    prizes: { bottom: 2000, middle: 10000, top: 20000 },
   },
 }
 
