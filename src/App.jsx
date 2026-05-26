@@ -362,6 +362,11 @@ function App() {
 
   const [playerLockedOut, setPlayerLockedOut] = useState(false)
   const [playerSetScore, setPlayerSetScore] = useState(0)
+  const [categoryEntries, setCategoryEntries] = useState([])
+  const [playerEnteredCategory, setPlayerEnteredCategory] = useState(false)
+  const [playerCurrentCategoryNumber, setPlayerCurrentCategoryNumber] = useState(1)
+  const [isEnteringCategory, setIsEnteringCategory] = useState(false)
+  const [enterCategoryMessage, setEnterCategoryMessage] = useState('')
 
   const gamePhase = useMemo(
     () => resolveGamePhase(createdGame?.status, currentQuestion?.status),
@@ -396,7 +401,8 @@ function App() {
   const playerQuestionIsRevealed = loadedPlayerQuestion?.status === 'revealed'
   const playerWaitingAfterSubmit = !!submittedResult && !playerQuestionIsRevealed
   const playerShowLiveQuestion =
-    !!joinedPlayer && playerQuestionIsOpen && !submittedResult && !playerLockedOut
+    !!joinedPlayer && playerEnteredCategory && playerQuestionIsOpen && !submittedResult && !playerLockedOut
+  const playerNeedsToEnterCategory = !!joinedPlayer && !playerEnteredCategory && !playerLockedOut
 
   const hostLeaderboardPlayers = useMemo(() => sortLeaderboard(leaderboard), [leaderboard])
 
@@ -785,6 +791,11 @@ function App() {
       }
     }
 
+    await clearCategoryEntries(updatedGame.id, categoryNumber)
+    setCategoryEntries([])
+    setPlayerEnteredCategory(false)
+    setEnterCategoryMessage('')
+
     setLeaderboard([])
     setWrongOutSummaries([])
     setSubmissionCount(0)
@@ -929,6 +940,94 @@ function App() {
     setIsJoining(false)
   }
 
+  async function loadCategoryEntriesForGame(gameId, categoryNumber, showMessage = false) {
+    if (!gameId || !categoryNumber) {
+      setCategoryEntries([])
+      return []
+    }
+
+    const { data, error } = await supabase
+      .from('category_entries')
+      .select('*')
+      .eq('game_id', gameId)
+      .eq('category_number', categoryNumber)
+
+    if (error) {
+      if (showMessage) {
+        setPlayerListMessage(`Could not load category entries: ${error.message}`)
+      }
+      setCategoryEntries([])
+      return []
+    }
+
+    setCategoryEntries(data || [])
+    return data || []
+  }
+
+  async function clearCategoryEntries(gameId, categoryNumber) {
+    if (!gameId || !categoryNumber) return
+
+    const { error } = await supabase
+      .from('category_entries')
+      .delete()
+      .eq('game_id', gameId)
+      .eq('category_number', categoryNumber)
+
+    if (error) {
+      setStatusMessage(`Could not clear category entries: ${error.message}`)
+    }
+  }
+
+  async function enterCurrentCategory() {
+    if (!joinedPlayer) {
+      setEnterCategoryMessage('Join a game first.')
+      return
+    }
+
+    setIsEnteringCategory(true)
+    setEnterCategoryMessage('Entering category...')
+
+    const { data: game, error: gameError } = await supabase
+      .from('games')
+      .select('*')
+      .eq('id', joinedPlayer.game_id)
+      .single()
+
+    if (gameError || !game) {
+      setEnterCategoryMessage('Could not load the current game.')
+      setIsEnteringCategory(false)
+      return
+    }
+
+    const categoryNumber = getCategoryNumber(game.current_question_number || 1)
+
+    const { error } = await supabase
+      .from('category_entries')
+      .upsert(
+        [
+          {
+            game_id: joinedPlayer.game_id,
+            player_id: joinedPlayer.id,
+            category_number: categoryNumber,
+          },
+        ],
+        { onConflict: 'game_id,player_id,category_number' }
+      )
+
+    if (error) {
+      setEnterCategoryMessage(`Could not enter category: ${error.message}`)
+      setIsEnteringCategory(false)
+      return
+    }
+
+    setPlayerCurrentCategoryNumber(categoryNumber)
+    setPlayerEnteredCategory(true)
+    setEnterCategoryMessage(`Entered ${getCategoryLabelFromCategory(categoryNumber)}.`)
+    setIsEnteringCategory(false)
+
+    await loadQuestionForPlayer(true)
+  }
+
   async function loadPlayersForCreatedGame(showMessage = true) {
     if (!createdGame) {
       if (showMessage) setPlayerListMessage('Create a game first.')
@@ -947,6 +1046,11 @@ function App() {
     }
 
     setPlayersInGame(data || [])
+    await loadCategoryEntriesForGame(
+      createdGame.id,
+      getCategoryNumber(createdGame.current_question_number || 1),
+      false
+    )
 
     if (showMessage) {
       if (!data || data.length === 0) {
@@ -1111,6 +1215,20 @@ function App() {
       ? Math.max(0, closedAt.getTime() - new Date(currentQuestion.opened_at).getTime())
       : 0
 
+    const currentCategoryNumber = getCategoryNumber(currentQuestion.question_number)
+    const { data: enteredRows, error: entriesError } = await supabase
+      .from('category_entries')
+      .select('player_id')
+      .eq('game_id', createdGame.id)
+      .eq('category_number', currentCategoryNumber)
+
+    if (entriesError) {
+      setQuestionMessage(`Could not check entered players before closing: ${entriesError.message}`)
+      return
+    }
+
+    const enteredPlayerIds = new Set((enteredRows || []).map((entry) => entry.player_id))
+
     const { data: allPlayers, error: playersError } = await supabase
       .from('players')
       .select('*')
@@ -1132,7 +1250,9 @@ function App() {
     }
 
     const submittedPlayerIds = new Set((existingSubmissions || []).map((submission) => submission.player_id))
-    const missingPlayers = (allPlayers || []).filter((player) => !submittedPlayerIds.has(player.id))
+    const missingPlayers = (allPlayers || []).filter(
+      (player) => enteredPlayerIds.has(player.id) && !submittedPlayerIds.has(player.id)
+    )
 
     if (missingPlayers.length > 0) {
       const missedSubmissionRows = missingPlayers.map((player) => ({
@@ -1512,6 +1632,10 @@ function App() {
         return
       }
 
+      await clearCategoryEntries(data.id, getCategoryNumber(nextNumber))
+      setCategoryEntries([])
+      setPlayerEnteredCategory(false)
+      setEnterCategoryMessage('')
       setWrongOutSummaries([])
     }
 
@@ -1583,6 +1707,35 @@ function App() {
     }
 
     const currentRoundNumber = game.current_question_number || 1
+    const currentCategoryNumber = getCategoryNumber(currentRoundNumber)
+    setPlayerCurrentCategoryNumber(currentCategoryNumber)
+
+    const { data: entryRow, error: entryError } = await supabase
+      .from('category_entries')
+      .select('id')
+      .eq('game_id', joinedPlayer.game_id)
+      .eq('player_id', joinedPlayer.id)
+      .eq('category_number', currentCategoryNumber)
+      .maybeSingle()
+
+    if (entryError) {
+      setPlayerQuestionMessage(`Could not check category entry: ${entryError.message}`)
+      return
+    }
+
+    const hasEnteredCategory = !!entryRow
+    setPlayerEnteredCategory(hasEnteredCategory)
+
+    if (!hasEnteredCategory) {
+      setLoadedPlayerQuestion(null)
+      setLoadedPlayerOptions([])
+      setSelectedOptionIds([])
+      setSubmittedResult(null)
+      setPlayerLockedOut(false)
+      setPlayerSetScore(0)
+      setPlayerQuestionMessage(`Enter ${getCategoryLabelFromCategory(currentCategoryNumber)} to play.`)
+      return
+    }
 
     const progress = await getPlayerProgressForCurrentCategory(
       joinedPlayer.game_id,
@@ -1827,7 +1980,7 @@ function App() {
     setIsSubmitting(false)
   }
 
-  async function loadWrongOutSummaries(gameId, questionNumber) {
+  async function loadWrongOutSummaries(gameId, questionNumber, enteredPlayerIds = null) {
     if (!gameId || !questionNumber) {
       setWrongOutSummaries([])
       return []
@@ -1872,6 +2025,8 @@ function App() {
 
     const grouped = {}
     wrongSubs.forEach((submission) => {
+      if (enteredPlayerIds && !enteredPlayerIds.has(submission.player_id)) return
+
       const summary = {
         player_id: submission.player_id,
         wrong_question_number: questionMap[submission.question_id] || 999,
@@ -1915,15 +2070,19 @@ function App() {
       return
     }
 
-    const sorted = sortLeaderboard(data || [])
+    const currentCategoryNumber = getCategoryNumber(createdGame.current_question_number || 1)
+    const entries = await loadCategoryEntriesForGame(createdGame.id, currentCategoryNumber, false)
+    const enteredPlayerIds = new Set((entries || []).map((entry) => entry.player_id))
+    const enteredPlayers = (data || []).filter((player) => enteredPlayerIds.has(player.id))
+    const sorted = sortLeaderboard(enteredPlayers)
     setLeaderboard(sorted)
-    await loadWrongOutSummaries(createdGame.id, createdGame.current_question_number)
+    await loadWrongOutSummaries(createdGame.id, createdGame.current_question_number, enteredPlayerIds)
 
     if (showMessage) {
       if (!sorted.length) {
-        setLeaderboardMessage('No players in leaderboard yet.')
+        setLeaderboardMessage('No entered players in leaderboard yet.')
       } else {
-        setLeaderboardMessage(`Loaded ${sorted.length} player(s).`)
+        setLeaderboardMessage(`Loaded ${sorted.length} entered player(s).`)
       }
     }
   }
@@ -2736,14 +2895,27 @@ function App() {
 
                     <div className="result-box">
                       <p><strong>Name:</strong> {joinedPlayer.name}</p>
+                      {playerNeedsToEnterCategory && (
+                        <p>Press enter to join {getCategoryLabelFromCategory(playerCurrentCategoryNumber)}. Only entered players are counted.</p>
+                      )}
                     </div>
+
+                    {playerNeedsToEnterCategory && (
+                      <button
+                        onClick={enterCurrentCategory}
+                        disabled={isEnteringCategory}
+                        className="primary-button full-width"
+                      >
+                        {isEnteringCategory ? 'Entering...' : 'Enter Game'}
+                      </button>
+                    )}
 
                     <button onClick={() => loadQuestionForPlayer(true)} className="full-width">
                       Refresh Question
                     </button>
 
                     <div className="status-box">
-                      <p><strong>Status:</strong> {playerQuestionMessage || 'Waiting'}</p>
+                      <p><strong>Status:</strong> {enterCategoryMessage || playerQuestionMessage || 'Waiting'}</p>
                     </div>
 
                     {playerLockedOut && loadedPlayerQuestion && (
